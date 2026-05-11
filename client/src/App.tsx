@@ -7,9 +7,9 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import Stats from "./pages/Stats";
+import Roster from "./pages/Roster";
 
-// GitHub Pages에서는 리포지토리명이 path prefix가 됨
-// Vite의 BASE_URL을 wouter에 전달하여 라우트 동작
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function Router() {
@@ -18,26 +18,19 @@ function Router() {
       <Switch>
         <Route path={"/"} component={Home} />
         <Route path={"/login"} component={Login} />
+        <Route path={"/stats"} component={Stats} />
+        <Route path={"/roster"} component={Roster} />
         <Route path={"/404"} component={NotFound} />
-        {/* Final fallback route */}
         <Route component={NotFound} />
       </Switch>
     </WouterRouter>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="light">
         <AuthProvider>
           <TooltipProvider>
             <Toaster />

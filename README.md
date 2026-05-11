@@ -13,7 +13,8 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | --- | --- | --- |
 | 1 | Supabase 프로젝트/스키마/RLS, 엑셀→DB 마이그레이션 | 완료 |
 | 2 | React + Vite + Tailwind + Supabase 인증 뼈대, GitHub Pages 배포 설정 | 완료 |
-| 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리 | 예정 |
+| 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리(CSV 업로드 포함) | 완료 |
+| 4 | 권한 분리(교사/관리자 역할), 알림, 회원가입 | 예정 |
 
 ---
 
@@ -27,10 +28,13 @@ attendance-2026-webapp/
 │   ├── index.html
 │   └── src/
 │       ├── App.tsx                # 라우팅 + Provider 조립
+│       ├── components/AppLayout.tsx  # 사이드바 + 모바일 상단 네비
 │       ├── contexts/AuthContext.tsx
 │       ├── lib/supabase.ts        # Supabase 클라이언트 & 도메인 타입
-│       ├── pages/Login.tsx        # 로그인 페이지 (Devotional Editorial 디자인)
-│       └── pages/Home.tsx         # 인증 후 학생 명단
+│       ├── pages/Login.tsx        # 로그인 페이지
+│       ├── pages/Home.tsx         # 출석 입력 (도장 토글 + Optimistic UI)
+│       ├── pages/Stats.tsx        # 통계 대시보드 (Recharts)
+│       └── pages/Roster.tsx       # 학생/교사 CRUD + CSV·XLSX 일괄 등록
 ├── supabase/schema.sql            # DB 스키마/인덱스/RLS/뷰
 ├── scripts/
 │   ├── migrate.py                 # REST API 기반 마이그레이션
@@ -219,8 +223,32 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 | 경로 | 페이지 | 인증 필요 |
 | --- | --- | --- |
-| `/` | 학생 명단 (마일스톤 3에서 출석 입력으로 확장) | O |
+| `/` | 출석 입력 (도장 토글 + Optimistic UI) | O |
+| `/stats` | 주차별/반별 출석 통계 대시보드 | O |
+| `/roster` | 학생/교사 CRUD + CSV/XLSX 일괄 등록 | O |
 | `/login` | 이메일/패스워드 로그인 | X |
+
+### 주요 기능
+
+**출석 입력 (`/`)**
+
+- 기본값: 가장 최근 일요일 (상단 좌우 화살표로 주단위 이동)
+- 필터: 학년 / 반
+- 학생 카드 클릭 시 도장 애니메이션, Supabase에 즉시 upsert
+- 네트워크 실패 시 상태 자동 롤백
+
+**통계 (`/stats`)**
+
+- KPI 카드: 등록 학생 / 진행 주차 / 누적 출석 / 전체 출석률
+- 주차별 출석 인원 추이 (Line)
+- 반별 출석률 비교 (Bar)
+- 개인별 출석 상위 10명 테이블
+
+**명단 관리 (`/roster`)**
+
+- 학생/교사 탭 전환, 이름·학교·반 검색
+- 행 명 삽입/수정/삭제 다이얼로그
+- 엑셀/CSV 파일을 통한 일괄 생성 (한글 헤더 자동 매핑, 템플릿 다운로드 제공)
 
 ---
 
@@ -230,9 +258,9 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 ---
 
-## 다음 단계 (마일스톤 3)
+## 다음 단계 (마일스톤 4)
 
-- 주차 선택 + 학생 카드 출석 토글 UI (도장 애니메이션)
-- 출석률 통계 뷰 시각화 (recharts)
-- 교사/학생 CRUD 화면
-- 관리자 초대 기반 교사 계정 발급
+- 교사/관리자 역할 구분 (Supabase Auth metadata + RLS 세부화)
+- 회원가입 또는 관리자 초대 흐름
+- 주간 출석 마감 알림 (Edge Function + Push)
+- 결석 사유 메모 필드
