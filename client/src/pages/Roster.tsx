@@ -1,5 +1,5 @@
 // Devotional Editorial 스타일 - 명단 관리
-// - 학생/교사 탭 전환
+// - 학생/인도자 탭 전환
 // - 인라인 편집 다이얼로그 (생성/수정/삭제)
 // - CSV/XLSX 일괄 업로드 (헤더 자동 매핑)
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -41,7 +41,7 @@ const STUDENT_LABELS: Record<string, string> = {
   phone: "연락처",
   birth_date: "생년월일",
   school: "학교",
-  guide: "지도교사",
+  guide: "인도자",
 };
 
 export default function Roster() {
@@ -215,7 +215,7 @@ export default function Roster() {
                   setEditing(
                     tab === "students"
                       ? { kind: "student", data: { grade: "1학년", class_num: "1반" } }
-                      : { kind: "teacher", data: { role: "교사" } },
+                      : { kind: "teacher", data: { role: "인도자" } },
                   )
                 }
                 className="bg-[oklch(0.32_0.05_250)] text-white hover:bg-[oklch(0.28_0.05_250)]"
@@ -240,7 +240,7 @@ export default function Roster() {
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t === "students" ? `학생 (${students.length})` : `교사 (${teachers.length})`}
+                {t === "students" ? `학생 (${students.length})` : `인도자 (${teachers.length})`}
               </button>
             ))}
           </div>
@@ -280,7 +280,7 @@ export default function Roster() {
           <DialogHeader>
             <DialogTitle className="font-display italic text-xl">
               {editing?.data.id ? "편집" : "추가"} ·{" "}
-              {editing?.kind === "student" ? "학생" : "교사"}
+              {editing?.kind === "student" ? "학생" : "인도자"}
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
@@ -376,7 +376,7 @@ function StudentTable({
             <th className="px-4 py-3">이름</th>
             <th className="px-4 py-3">성별</th>
             <th className="px-4 py-3">학교</th>
-            <th className="px-4 py-3">지도교사</th>
+            <th className="px-4 py-3">인도자</th>
             <th className="px-4 py-3">연락처</th>
             {canWrite && <th className="px-4 py-3 w-24" />}
           </tr>

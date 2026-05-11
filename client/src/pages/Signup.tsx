@@ -56,7 +56,7 @@ export default function Signup() {
           </h1>
         </div>
         <p className="text-sm leading-relaxed opacity-80 max-w-sm">
-          가입한 계정은 기본적으로 교사 권한을 가집니다.<br />
+          가입한 계정은 기본적으로 인도자 권한을 가집니다.<br />
           관리자 권한은 기존 관리자가 명단 관리에서 부여합니다.
         </p>
       </aside>
@@ -69,7 +69,7 @@ export default function Signup() {
             </div>
             <h2 className="font-display text-3xl italic">Sign up</h2>
             <p className="text-sm text-muted-foreground mt-2">
-              교사용 계정을 새로 만듭니다.
+              인도자용 계정을 새로 만듭니다.
             </p>
           </div>
 

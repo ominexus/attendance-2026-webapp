@@ -13,7 +13,7 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | --- | --- | --- |
 | 1 | Supabase 프로젝트/스키마/RLS, 엑셀→DB 마이그레이션 | 완료 |
 | 2 | React + Vite + Tailwind + Supabase 인증 뼈대, GitHub Pages 배포 설정 | 완료 |
-| 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리(CSV 업로드 포함) | 완료 |
+| 3 | 출석 입력 UI, 통계 대시보드, 학생/인도자 관리(CSV 업로드 포함) | 완료 |
 | 4-1 | 회원가입 + 관리자 초대 + role 구분(profiles + Edge Function) | 완료 |
 | 4-1.5 | **공개 조회 + 관리자 전용 입력** (RLS public read / admin write) | 완료 |
 | 4-2 | UI 단순화: Guest/Admin 2모드, 회원가입/초대 UI 제거 | 완료 |
@@ -40,7 +40,7 @@ attendance-2026-webapp/
 │       ├── pages/Login.tsx        # 로그인 페이지 (직접 URL 접근 전용)
 │       ├── pages/Home.tsx         # 출석 입력 (도장 토글 + Optimistic UI)
 │       ├── pages/Stats.tsx        # 통계 대시보드 (Recharts)
-│       └── pages/Roster.tsx       # 학생/교사 CRUD + CSV·XLSX 일괄 등록
+│       ├── pages/Roster.tsx       # 학생/인도자 CRUD + CSV·XLSX 일괄 등록
 ├── supabase/
 │   ├── schema.sql                  # M1 스키마/인덱스/RLS/뷰
 │   ├── migrations/
@@ -250,9 +250,9 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 | --- | --- | --- | --- |
 | `/` | 출석 (도장 토글 + Optimistic UI) | O | admin 만 |
 | `/stats` | 주차별/반별 출석 통계 대시보드 | O | 읽기 전용 |
-| `/roster` | 학생/교사 명단 | O | admin 만 (입력/편집/삭제/일괄등록 버튼은 admin에서만 표시) |
+| `/roster` | 학생/인도자 명단 | O | admin 만 (입력/편집/삭제/일괄등록 버튼은 admin에서만 표시) |
 | `/login` | 이메일/패스워드 로그인 | O | - |
-| `/signup` | 교사 자마 가입 | O (직접 URL 접근 시만 노출, UI 진입점 제거) | - |
+| `/signup` | 인도자 자마 가입 | O (직접 URL 접근 시만 노출, UI 진입점 제거) | - |
 | `/set-password` | 초대 링크 수락 후 비밀번호 설정 | O (직접 URL 접근 시만, 초대 토큰 필요) | - |
 
 ### 주요 기능
@@ -273,7 +273,7 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 **명단 관리 (`/roster`)**
 
-- 학생/교사 탭 전환, 이름·학교·반 검색
+- 학생/인도자 탭 전환, 이름·학교·반 검색
 - 행 명 삽입/수정/삭제 다이얼로그
 - 엑셀/CSV 파일을 통한 일괄 생성 (한글 헤더 자동 매핑, 템플릿 다운로드 제공)
 
@@ -366,6 +366,6 @@ update public.profiles set role='admin' where email='admin@example.com';
 ## 다음 단계 (마일스톤 4-4 이후)
 
 - 주간 출석 마감 알림 (Edge Function + Push)
-- 반별 담당 교사 쓰기 권한 분리 (admin 외에도 자기 반만 입력 허용)
+- 반별 담당 인도자 쓰기 권한 분리 (admin 외에도 자기 반만 입력 허용)
 - 메모 스팸 방지(시간당 제한 / 최소 길이)
 - 출결 통계 PDF/CSV 내보내기

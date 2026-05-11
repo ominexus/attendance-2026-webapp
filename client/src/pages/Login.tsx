@@ -58,7 +58,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <div className="mb-10">
             <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground mb-3">
-              교사 로그인
+              인도자 로그인
             </div>
             <h2 className="font-display text-3xl italic">Sign in</h2>
             <p className="text-sm text-muted-foreground mt-2">
