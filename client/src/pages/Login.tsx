@@ -1,6 +1,6 @@
 // Devotional Editorial 스타일: paper-tone 배경 + ink-blue 액센트, Fraunces 헤드라인
 import { useState, FormEvent } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,8 +105,11 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="mt-8 text-[11px] text-muted-foreground leading-relaxed">
-            계정이 없으시면 관리자에게 문의하세요. (가입 기능은 마일스톤 3에서 제공됩니다.)
+          <div className="mt-8 text-[11px] text-muted-foreground leading-relaxed flex items-center justify-between">
+            <Link href="/signup">
+              <a className="underline underline-offset-4 hover:text-foreground">계정 만들기</a>
+            </Link>
+            <span>관리자가 보낸 초대 메일도 사용 가능</span>
           </div>
         </div>
       </main>

@@ -14,7 +14,8 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 1 | Supabase 프로젝트/스키마/RLS, 엑셀→DB 마이그레이션 | 완료 |
 | 2 | React + Vite + Tailwind + Supabase 인증 뼈대, GitHub Pages 배포 설정 | 완료 |
 | 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리(CSV 업로드 포함) | 완료 |
-| 4 | 권한 분리(교사/관리자 역할), 알림, 회원가입 | 예정 |
+| 4-1 | 회원가입 + 관리자 초대 + role 구분(profiles + Edge Function) | 완료 |
+| 4-2 | 알림, 결석 사유 메모 | 예정 |
 
 ---
 
@@ -35,7 +36,12 @@ attendance-2026-webapp/
 │       ├── pages/Home.tsx         # 출석 입력 (도장 토글 + Optimistic UI)
 │       ├── pages/Stats.tsx        # 통계 대시보드 (Recharts)
 │       └── pages/Roster.tsx       # 학생/교사 CRUD + CSV·XLSX 일괄 등록
-├── supabase/schema.sql            # DB 스키마/인덱스/RLS/뷰
+├── supabase/
+│   ├── schema.sql                  # M1 스키마/인덱스/RLS/뷰
+│   ├── migrations/
+│   │   └── 20260511_profiles_and_invites.sql  # M4-1: profiles 테이블 + role + 트리거
+│   └── functions/
+│       └── invite-user/index.ts    # M4-1: 관리자 전용 초대 Edge Function
 ├── scripts/
 │   ├── migrate.py                 # REST API 기반 마이그레이션
 │   └── migrate_via_mcp.py         # MCP 기반 마이그레이션 (M1 실사용)
@@ -225,8 +231,10 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 | --- | --- | --- |
 | `/` | 출석 입력 (도장 토글 + Optimistic UI) | O |
 | `/stats` | 주차별/반별 출석 통계 대시보드 | O |
-| `/roster` | 학생/교사 CRUD + CSV/XLSX 일괄 등록 | O |
+| `/roster` | 학생/교사 CRUD + 사용자 계정 탭(관리자용 초대/role 변경) | O |
 | `/login` | 이메일/패스워드 로그인 | X |
+| `/signup` | 교사 자마 가입 | X |
+| `/set-password` | 초대 링크 수락 후 비밀번호 설정 | X (초대 토큰으로 자동 로그인) |
 
 ### 주요 기능
 
@@ -258,9 +266,51 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 ---
 
-## 다음 단계 (마일스톤 4)
+## 인증/권한 (마일스톤 4-1)
 
-- 교사/관리자 역할 구분 (Supabase Auth metadata + RLS 세부화)
-- 회원가입 또는 관리자 초대 흐름
-- 주간 출석 마감 알림 (Edge Function + Push)
+### 구조
+
+- `auth.users` ↔ `public.profiles` (1:1, 가입 시 트리거로 자동 생성)
+- `profiles.role`: `admin` | `teacher` (기본 `teacher`)
+- `is_admin()` SQL 함수 + RLS:
+  - profiles: 본인만 SELECT/UPDATE, admin 은 전체 SELECT/UPDATE/DELETE
+  - role 변경은 admin 만 가능
+
+### 회원가입 흐름
+
+1. `/signup` 에서 이메일·비밀번호 입력
+2. Supabase Auth 이메일 확인 활성 여부에 따라 동작
+   - 활성: 링크 클릭 → 자동 로그인
+   - 비활성: 즉시 로그인 가능
+3. 트리거가 `profiles` 생성, role 은 `teacher` 고정
+
+### 관리자 초대 흐름
+
+1. 관리자로 로그인 → `/roster` → "사용자 계정" 탭
+2. 이메일/이름/역할 입력 후 초대
+3. 내부적으로 Edge Function `invite-user` 호출 → service_role 로 `inviteUserByEmail`
+4. 수신자는 메일 링크 → `/set-password` → 로그인
+
+### 필수 설정
+
+**Supabase Dashboard:**
+
+- Authentication > URL Configuration:
+  - Site URL: `https://ominexus.github.io/attendance-2026-webapp`
+  - Redirect URLs: 위 도메인 추가
+- Edge Functions 환경변수:
+  - `APP_PUBLIC_URL=https://ominexus.github.io/attendance-2026-webapp`
+
+**첫 관리자 지정** (처음 1회, SQL Editor):
+
+```sql
+update public.profiles set role='admin' where email='admin@example.com';
+```
+
+---
+
+## 다음 단계 (마일스톤 4-2 이후)
+
 - 결석 사유 메모 필드
+- 주간 출석 마감 알림 (Edge Function + Push)
+- 반별 담당 교사 권한 구분

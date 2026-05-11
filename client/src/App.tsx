@@ -9,6 +9,8 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Stats from "./pages/Stats";
 import Roster from "./pages/Roster";
+import Signup from "./pages/Signup";
+import SetPassword from "./pages/SetPassword";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -18,6 +20,8 @@ function Router() {
       <Switch>
         <Route path={"/"} component={Home} />
         <Route path={"/login"} component={Login} />
+        <Route path={"/signup"} component={Signup} />
+        <Route path={"/set-password"} component={SetPassword} />
         <Route path={"/stats"} component={Stats} />
         <Route path={"/roster"} component={Roster} />
         <Route path={"/404"} component={NotFound} />
