@@ -11,6 +11,7 @@ import Stats from "./pages/Stats";
 import Roster from "./pages/Roster";
 import Signup from "./pages/Signup";
 import SetPassword from "./pages/SetPassword";
+import PassCode from "./pages/PassCode";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -19,6 +20,7 @@ function Router() {
     <WouterRouter base={BASE}>
       <Switch>
         <Route path={"/"} component={Home} />
+        <Route path={"/access"} component={PassCode} />
         <Route path={"/login"} component={Login} />
         <Route path={"/signup"} component={Signup} />
         <Route path={"/set-password"} component={SetPassword} />

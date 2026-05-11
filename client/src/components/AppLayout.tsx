@@ -14,7 +14,6 @@ import {
   Users,
   Loader2,
   ShieldCheck,
-  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -100,7 +99,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <>
               <Button
                 size="sm"
-                onClick={() => setLocation("/login")}
+                onClick={() => setLocation("/access")}
                 className="w-full justify-start gap-2 text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20"
               >
                 <LogIn className="size-3.5" />
@@ -146,7 +145,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </button>
           ) : (
             <button
-              onClick={() => setLocation("/login")}
+              onClick={() => setLocation("/access")}
               className="ml-1 px-2 py-1.5 text-[10px]"
               title="Sign in"
             >
