@@ -17,7 +17,8 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 4-1 | 회원가입 + 관리자 초대 + role 구분(profiles + Edge Function) | 완료 |
 | 4-1.5 | **공개 조회 + 관리자 전용 입력** (RLS public read / admin write) | 완료 |
 | 4-2 | UI 단순화: Guest/Admin 2모드, 회원가입/초대 UI 제거 | 완료 |
-| 4-3 | 알림, 결석 사유 메모 | 예정 |
+| 4-3 | **결석 사유 메모** (absence_notes, 누구나 입력 가능) | **완료** |
+| 4-4 | 알림, 반별 권한 분리 | 예정 |
 
 ---
 
@@ -42,7 +43,8 @@ attendance-2026-webapp/
 │   ├── schema.sql                  # M1 스키마/인덱스/RLS/뷰
 │   ├── migrations/
 │   │   ├── 20260511_profiles_and_invites.sql  # M4-1: profiles 테이블 + role + 트리거
-│   │   └── 20260511_public_read_admin_write.sql # M4-1.5: 공개 조회 + 관리자 쓰기 정책
+│   │   ├── 20260511_public_read_admin_write.sql # M4-1.5: 공개 조회 + 관리자 쓰기 정책
+│   │   └── 20260511_absence_notes.sql      # M4-3: 결석 사유 메모 테이블 + public RLS
 │   └── functions/
 │       └── invite-user/index.ts    # M4-1: 관리자 전용 초대 Edge Function
 ├── scripts/
@@ -271,13 +273,13 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 ## 인증/권한 (마일스톤 4-1 / 4-1.5)
 
-### 정책 모델 (M4-1.5)
+### 정책 모델
 
-| 테이블 | SELECT | INSERT/UPDATE/DELETE |
-| --- | --- | --- |
-| `attendance`, `students`, `teachers` | **anon + authenticated 모두 허용** | `is_admin()` 만 허용 |
-| `profiles` | 본인 + admin | 본인 UPDATE(역할 제외) + admin 전체 |
-
+| 테이블 | SELECT | INSERT/UPDATE | DELETE |
+| --- | --- | --- | --- |
+| `attendance`, `students`, `teachers` | anon + authenticated | `is_admin()` 만 | `is_admin()` 만 |
+| `profiles` | 본인 + admin | 본인 UPDATE(역할 제외) + admin 전체 | admin |
+| **`absence_notes`** | **anon + authenticated** | **anon + authenticated (누구나)** | **`is_admin()` 만** |
 결과:
 
 - 비로그인 방문자도 출석/통계/명단을 그대로 조회 가능 (열람용 공개 사이트로 사용 가능)
@@ -323,9 +325,33 @@ update public.profiles set role='admin' where email='admin@example.com';
 
 ---
 
-## 다음 단계 (마일스톤 4-2 이후)
+## 결석 사유 메모 (마일스톤 4-3)
 
-- 결석 사유 메모 필드
+결석한 학생의 사유를 기록하는 기능. 출석 토글과는 별도의 RLS 권한을 갖습니다.
+
+### 데이터 모델
+
+- 테이블: `public.absence_notes`
+- `(attend_date, student_id)` UNIQUE → 일/학생 당 1건
+- `note` 최대 500자, `author_name` 선택값 (로그인 시 프로필 displayName 또는 email 자동 기록)
+- `updated_at` 자동 갱신 트리거
+
+### RLS
+
+- SELECT/INSERT/UPDATE: `anon, authenticated` 모두 허용
+- DELETE: `is_admin()` 만 허용 (오·남용 정리용)
+
+### UI 동작
+
+- `/` 출석 페이지: **결석 카드**에만 메모 입력 영역 노출. 누구나 작성 가능 (비로그인 포함). Ctrl+Enter/Enter 키 저장, Optimistic UI + 실패 시 롤백
+- `/stats`: 하단에 "Absence Notes" 섹션 추가. 최근 50건 날짜·학생·사유·작성자 표시
+- 메모 쓰기는 출석 입력(admin 전용)과 별도 흐름으로 작동 → Guest도 사유만 입력 가능
+
+---
+
+## 다음 단계 (마일스톤 4-4 이후)
+
 - 주간 출석 마감 알림 (Edge Function + Push)
 - 반별 담당 교사 쓰기 권한 분리 (admin 외에도 자기 반만 입력 허용)
+- 메모 스팸 방지(시간당 제한 / 최소 길이)
 - 출결 통계 PDF/CSV 내보내기

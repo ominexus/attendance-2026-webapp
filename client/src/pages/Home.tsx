@@ -3,13 +3,13 @@
 // - 가장 최근 일요일을 기본 날짜로 설정
 // - 학년/반 필터, 학생 카드 형태의 도장(stamp) 토글
 // - Optimistic UI + Supabase upsert/delete
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Attendance } from "@/lib/supabase";
+import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck, MessageSquare, Check } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -28,14 +28,16 @@ function shiftDate(yyyymmdd: string, days: number): string {
 }
 
 export default function Home() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, user, profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
+  const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map()); // key: student_id
   const [date, setDate] = useState<string>(lastSunday());
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
   const [fetching, setFetching] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
+  const [openNoteFor, setOpenNoteFor] = useState<string | null>(null);
 
   // 학생 명단 로드 (1회)
   useEffect(() => {
@@ -59,24 +61,29 @@ export default function Home() {
     };
   }, []);
 
-  // 선택된 날짜의 출석 기록 로드
+  // 선택된 날짜의 출석 기록 + 결석 사유 메모 로드
   useEffect(() => {
     let cancelled = false;
     setFetching(true);
     (async () => {
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("*")
-        .eq("attendance_date", date);
+      const [attRes, noteRes] = await Promise.all([
+        supabase.from("attendance").select("*").eq("attendance_date", date),
+        supabase.from("absence_notes").select("*").eq("attend_date", date),
+      ]);
       if (cancelled) return;
-      if (error) {
-        toast.error("출석 로드 실패: " + error.message);
+      if (attRes.error) {
+        toast.error("출석 로드 실패: " + attRes.error.message);
       } else {
         const m = new Map<string, Attendance>();
-        for (const a of (data as Attendance[]) ?? []) {
-          m.set(a.student_id, a);
-        }
+        for (const a of (attRes.data as Attendance[]) ?? []) m.set(a.student_id, a);
         setAttendance(m);
+      }
+      if (noteRes.error) {
+        toast.error("메모 로드 실패: " + noteRes.error.message);
+      } else {
+        const nm = new Map<string, AbsenceNote>();
+        for (const n of (noteRes.data as AbsenceNote[]) ?? []) nm.set(n.student_id, n);
+        setNotes(nm);
       }
       setFetching(false);
     })();
@@ -173,6 +180,75 @@ export default function Home() {
     setSaving((prev) => {
       const s = new Set(prev);
       s.delete(student.id);
+      return s;
+    });
+  }
+
+  // 메모 저장 (누구나 가능, Optimistic)
+  async function saveNote(studentId: string, text: string) {
+    const trimmed = text.trim().slice(0, 500);
+    const current = notes.get(studentId);
+
+    // 변경이 없으면 무시
+    if ((current?.note ?? "") === trimmed) return;
+
+    setSaving((prev) => new Set(prev).add("note:" + studentId));
+
+    if (trimmed === "") {
+      // 빈 문자열이면 삭제는 admin만 가능 → 대신 "・" 좌너섬으로 업데이트 하지 않고 종료
+      setSaving((p) => {
+        const s = new Set(p);
+        s.delete("note:" + studentId);
+        return s;
+      });
+      return;
+    }
+
+    // Optimistic
+    const optimistic: AbsenceNote = current
+      ? { ...current, note: trimmed, updated_at: new Date().toISOString() }
+      : {
+          id: "tmp-" + studentId,
+          attend_date: date,
+          student_id: studentId,
+          note: trimmed,
+          author_name: profile?.display_name || user?.email || null,
+          author_id: user?.id ?? null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+    setNotes((prev) => new Map(prev).set(studentId, optimistic));
+
+    const payload: Partial<AbsenceNote> = {
+      attend_date: date,
+      student_id: studentId,
+      note: trimmed,
+      author_name: profile?.display_name || user?.email || null,
+      author_id: user?.id ?? null,
+    };
+
+    const { data, error } = await supabase
+      .from("absence_notes")
+      .upsert(payload, { onConflict: "attend_date,student_id" })
+      .select()
+      .single();
+
+    if (error) {
+      // 롤백
+      setNotes((prev) => {
+        const m = new Map(prev);
+        if (current) m.set(studentId, current);
+        else m.delete(studentId);
+        return m;
+      });
+      toast.error("메모 저장 실패: " + error.message);
+    } else if (data) {
+      setNotes((prev) => new Map(prev).set(studentId, data as AbsenceNote));
+      toast.success("메모를 저장했습니다", { duration: 1500 });
+    }
+    setSaving((p) => {
+      const s = new Set(p);
+      s.delete("note:" + studentId);
       return s;
     });
   }
@@ -289,29 +365,42 @@ export default function Home() {
             출석 데이터 로드 중…
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {filtered.map((s) => {
               const present = attendance.get(s.id)?.status ?? false;
               const isSaving = saving.has(s.id);
+              const note = notes.get(s.id);
+              const noteSaving = saving.has("note:" + s.id);
+              const noteOpen = openNoteFor === s.id;
+              const hasNote = !!note?.note;
               return (
-                <button
+                <div
                   key={s.id}
-                  onClick={() => toggle(s)}
-                  disabled={isSaving || !isAdmin}
                   className={cn(
-                    "relative group text-left bg-white border px-4 py-3 transition-all duration-150",
-                    isAdmin
-                      ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
-                      : "cursor-default",
+                    "relative bg-white border transition-all duration-150",
                     present
                       ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)]"
                       : "border-foreground/15",
                   )}
                 >
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {s.grade} {s.class_num}
-                  </div>
-                  <div className="font-display text-lg mt-0.5">{s.name}</div>
+                  {/* 상단 토글 영역 (admin만 클릭) */}
+                  <button
+                    type="button"
+                    onClick={() => toggle(s)}
+                    disabled={isSaving || !isAdmin}
+                    className={cn(
+                      "w-full text-left px-4 py-3",
+                      isAdmin
+                        ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                        : "cursor-default",
+                    )}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {s.grade} {s.class_num}
+                    </div>
+                    <div className="font-display text-lg mt-0.5">{s.name}</div>
+                  </button>
+
                   {/* Stamp */}
                   {present && (
                     <div
@@ -322,9 +411,45 @@ export default function Home() {
                     </div>
                   )}
                   {isSaving && (
-                    <Loader2 className="absolute bottom-2 right-2 size-3 animate-spin text-muted-foreground" />
+                    <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
                   )}
-                </button>
+
+                  {/* 메모 영역 - 결석시에만 노출 */}
+                  {!present && (
+                    <div className="border-t border-foreground/10 px-3 py-2">
+                      {noteOpen ? (
+                        <NoteEditor
+                          initial={note?.note ?? ""}
+                          saving={noteSaving}
+                          onSave={async (v) => {
+                            await saveNote(s.id, v);
+                            setOpenNoteFor(null);
+                          }}
+                          onCancel={() => setOpenNoteFor(null)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setOpenNoteFor(s.id)}
+                          className={cn(
+                            "w-full text-left text-xs flex items-start gap-1.5 hover:text-foreground transition-colors",
+                            hasNote ? "text-foreground/80" : "text-muted-foreground",
+                          )}
+                        >
+                          <MessageSquare className="size-3.5 mt-0.5 shrink-0" />
+                          <span className="line-clamp-2">
+                            {hasNote ? note!.note : "결석 사유 메모…"}
+                          </span>
+                        </button>
+                      )}
+                      {hasNote && !noteOpen && note?.author_name && (
+                        <div className="text-[10px] text-muted-foreground/70 mt-1 uppercase tracking-wider">
+                          · {note.author_name}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -337,5 +462,74 @@ export default function Home() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+// 결석 사유 메모 인라인 에디터
+function NoteEditor({
+  initial,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  saving: boolean;
+  onSave: (v: string) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.setSelectionRange(value.length, value.length);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-1.5">
+      <textarea
+        ref={ref}
+        value={value}
+        maxLength={500}
+        rows={2}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onSave(value);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        placeholder="결석 사유 (예: 가족 여행, 병결 등) · ⌘/Ctrl+Enter 저장"
+        className="w-full text-xs px-2 py-1.5 border border-foreground/20 bg-white resize-none focus:outline-none focus:border-[oklch(0.32_0.05_250)]"
+      />
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] text-muted-foreground">
+          {value.length}/500 · 누구나 작성 가능
+        </div>
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[10px]"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            취소
+          </Button>
+          <Button
+            size="sm"
+            className="h-6 px-2 text-[10px] bg-[oklch(0.32_0.05_250)] hover:bg-[oklch(0.28_0.05_250)]"
+            onClick={() => onSave(value)}
+            disabled={saving}
+          >
+            {saving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+            저장
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

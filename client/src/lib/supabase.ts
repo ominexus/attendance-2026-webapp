@@ -48,3 +48,15 @@ export interface Attendance {
   status: boolean;
   created_at: string;
 }
+
+// 결석 사유 메모 (누구나 작성/수정 가능, 삭제는 admin만)
+export interface AbsenceNote {
+  id: string;
+  attend_date: string; // YYYY-MM-DD
+  student_id: string;
+  note: string;
+  author_name: string | null;
+  author_id: string | null;
+  created_at: string;
+  updated_at: string;
+}

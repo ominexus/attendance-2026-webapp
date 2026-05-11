@@ -5,8 +5,8 @@
 // - 개인별 출석 횟수 상위 (테이블)
 import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Attendance } from "@/lib/supabase";
-import { Loader2 } from "lucide-react";
+import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
+import { Loader2, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import {
   ResponsiveContainer,
@@ -26,22 +26,30 @@ const WINE = "oklch(0.45 0.18 25)";
 export default function Stats() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [notes, setNotes] = useState<AbsenceNote[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [{ data: sData, error: sErr }, { data: aData, error: aErr }] = await Promise.all([
+      const [sRes, aRes, nRes] = await Promise.all([
         supabase.from("students").select("*"),
         supabase.from("attendance").select("*").eq("status", true),
+        supabase
+          .from("absence_notes")
+          .select("*")
+          .order("attend_date", { ascending: false })
+          .order("updated_at", { ascending: false })
+          .limit(50),
       ]);
       if (cancelled) return;
-      if (sErr || aErr) {
+      if (sRes.error || aRes.error || nRes.error) {
         toast.error("데이터 로드 실패");
       } else {
-        setStudents((sData as Student[]) ?? []);
-        setAttendance((aData as Attendance[]) ?? []);
+        setStudents((sRes.data as Student[]) ?? []);
+        setAttendance((aRes.data as Attendance[]) ?? []);
+        setNotes((nRes.data as AbsenceNote[]) ?? []);
       }
       setLoading(false);
     })();
@@ -49,6 +57,13 @@ export default function Stats() {
       cancelled = true;
     };
   }, []);
+
+  // 메모 → 학생 조인 맵
+  const studentMap = useMemo(() => {
+    const m = new Map<string, Student>();
+    for (const s of students) m.set(s.id, s);
+    return m;
+  }, [students]);
 
   // 주차별 출석 인원 (시간순)
   const weekly = useMemo(() => {
@@ -213,6 +228,60 @@ export default function Stats() {
                   </tbody>
                 </table>
               </div>
+            </Section>
+
+            {/* 결석 사유 메모 */}
+            <Section
+              title="Absence Notes"
+              subtitle={`최근 결석 사유 메모 (${notes.length}건)`}
+            >
+              {notes.length === 0 ? (
+                <div className="bg-white border border-foreground/10 px-4 py-8 text-center text-sm text-muted-foreground">
+                  아직 기록된 메모가 없습니다.
+                </div>
+              ) : (
+                <div className="bg-white border border-foreground/10">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <th className="px-4 py-3 w-32">날짜</th>
+                        <th className="px-4 py-3 w-40">학생</th>
+                        <th className="px-4 py-3">사유</th>
+                        <th className="px-4 py-3 w-32">작성자</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {notes.map((n) => {
+                        const s = studentMap.get(n.student_id);
+                        return (
+                          <tr key={n.id} className="border-t border-foreground/10">
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums">
+                              {n.attend_date}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="font-medium">{s?.name ?? "(삭제됨)"}</div>
+                              {s && (
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  {s.grade} {s.class_num}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-start gap-1.5 text-foreground/80">
+                                <MessageSquare className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                                <span className="whitespace-pre-wrap">{n.note}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                              {n.author_name ?? "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Section>
           </>
         )}
