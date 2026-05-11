@@ -3,6 +3,7 @@
 // - 가장 최근 일요일을 기본 날짜로 설정
 // - 학년/반 필터, 학생 카드 형태의 도장(stamp) 토글
 // - Optimistic UI + Supabase upsert/delete
+// - 반별 → 남/여 그룹핑 표시 (마일스톤 4-6)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
@@ -25,6 +26,27 @@ function shiftDate(yyyymmdd: string, days: number): string {
   const d = new Date(yyyymmdd);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+// 성별 정규화: 다양한 입력값을 '남'/'여'/'미지정'으로 통일
+function normalizeGender(g: string | null): "남" | "여" | "미지정" {
+  if (!g) return "미지정";
+  const v = g.trim().toLowerCase();
+  if (v === "남" || v === "m" || v === "male" || v === "boy") return "남";
+  if (v === "여" || v === "f" || v === "female" || v === "girl") return "여";
+  return "미지정";
+}
+
+// 반별 → 성별 그룹 구조
+interface GenderGroup {
+  gender: "남" | "여" | "미지정";
+  students: Student[];
+}
+interface ClassGroup {
+  classKey: string; // grade + class_num 조합 (예: "1학년 1반")
+  grade: string;
+  classNum: string;
+  genderGroups: GenderGroup[];
 }
 
 export default function Home() {
@@ -117,6 +139,37 @@ export default function Home() {
 
   const presentCount = filtered.filter((s) => attendance.get(s.id)?.status).length;
 
+  // 반별 → 성별 그룹 구조 생성
+  const classGroups = useMemo<ClassGroup[]>(() => {
+    // 반 목록 (정렬 순서 유지)
+    const classKeys = Array.from(
+      new Set(filtered.map((s) => `${s.grade}||${s.class_num}`)),
+    ).sort();
+
+    return classKeys.map((key) => {
+      const [grade, classNum] = key.split("||");
+      const classStudents = filtered.filter(
+        (s) => s.grade === grade && s.class_num === classNum,
+      );
+
+      // 성별 그룹: 남 → 여 → 미지정 순서
+      const genderOrder: ("남" | "여" | "미지정")[] = ["남", "여", "미지정"];
+      const genderGroups: GenderGroup[] = genderOrder
+        .map((gender) => ({
+          gender,
+          students: classStudents.filter((s) => normalizeGender(s.gender) === gender),
+        }))
+        .filter((g) => g.students.length > 0);
+
+      return {
+        classKey: key,
+        grade,
+        classNum: classNum,
+        genderGroups,
+      };
+    });
+  }, [filtered, attendance]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 출석 토글 (Optimistic + Supabase)
   async function toggle(student: Student) {
     if (!isAdmin) {
@@ -195,7 +248,6 @@ export default function Home() {
     setSaving((prev) => new Set(prev).add("note:" + studentId));
 
     if (trimmed === "") {
-      // 빈 문자열이면 삭제는 admin만 가능 → 대신 "・" 좌너섬으로 업데이트 하지 않고 종료
       setSaving((p) => {
         const s = new Set(p);
         s.delete("note:" + studentId);
@@ -358,106 +410,161 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Student Cards */}
+        {/* Student Cards - 반별/남여 그룹핑 */}
         {fetching ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
             <Loader2 className="animate-spin size-4" />
             출석 데이터 로드 중…
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {filtered.map((s) => {
-              const present = attendance.get(s.id)?.status ?? false;
-              const isSaving = saving.has(s.id);
-              const note = notes.get(s.id);
-              const noteSaving = saving.has("note:" + s.id);
-              const noteOpen = openNoteFor === s.id;
-              const hasNote = !!note?.note;
-              return (
-                <div
-                  key={s.id}
-                  className={cn(
-                    "relative bg-white border transition-all duration-150",
-                    present
-                      ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)]"
-                      : "border-foreground/15",
-                  )}
-                >
-                  {/* 상단 토글 영역 (admin만 클릭) */}
-                  <button
-                    type="button"
-                    onClick={() => toggle(s)}
-                    disabled={isSaving || !isAdmin}
-                    className={cn(
-                      "w-full text-left px-4 py-3",
-                      isAdmin
-                        ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
-                        : "cursor-default",
-                    )}
-                  >
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {s.grade} {s.class_num}
-                    </div>
-                    <div className="font-display text-lg mt-0.5">{s.name}</div>
-                  </button>
-
-                  {/* Stamp */}
-                  {present && (
-                    <div
-                      className="absolute -top-2 -right-2 size-12 rounded-full border-2 border-[oklch(0.45_0.18_25)] text-[oklch(0.45_0.18_25)] flex items-center justify-center font-display italic text-[10px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm"
-                      style={{ fontFeatureSettings: '"smcp"' }}
-                    >
-                      출석
-                    </div>
-                  )}
-                  {isSaving && (
-                    <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
-                  )}
-
-                  {/* 메모 영역 - 결석시에만 노출 */}
-                  {!present && (
-                    <div className="border-t border-foreground/10 px-3 py-2">
-                      {noteOpen ? (
-                        <NoteEditor
-                          initial={note?.note ?? ""}
-                          saving={noteSaving}
-                          onSave={async (v) => {
-                            await saveNote(s.id, v);
-                            setOpenNoteFor(null);
-                          }}
-                          onCancel={() => setOpenNoteFor(null)}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setOpenNoteFor(s.id)}
-                          className={cn(
-                            "w-full text-left text-xs flex items-start gap-1.5 hover:text-foreground transition-colors",
-                            hasNote ? "text-foreground/80" : "text-muted-foreground",
-                          )}
-                        >
-                          <MessageSquare className="size-3.5 mt-0.5 shrink-0" />
-                          <span className="line-clamp-2">
-                            {hasNote ? note!.note : "결석 사유 메모…"}
-                          </span>
-                        </button>
-                      )}
-                      {hasNote && !noteOpen && note?.author_name && (
-                        <div className="text-[10px] text-muted-foreground/70 mt-1 uppercase tracking-wider">
-                          · {note.author_name}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {filtered.length === 0 && !fetching && (
+        ) : classGroups.length === 0 ? (
           <div className="text-center text-muted-foreground text-sm py-12">
             조건에 해당하는 학생이 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {classGroups.map((cg) => {
+              // 반 전체 출석 카운트
+              const classStudentIds = cg.genderGroups.flatMap((g) => g.students.map((s) => s.id));
+              const classPresentCount = classStudentIds.filter(
+                (id) => attendance.get(id)?.status,
+              ).length;
+
+              return (
+                <section key={cg.classKey}>
+                  {/* 반 헤더 */}
+                  <div className="flex items-baseline gap-3 mb-4 border-b-2 border-[oklch(0.32_0.05_250)] pb-2">
+                    <h2 className="font-display text-2xl italic text-[oklch(0.32_0.05_250)]">
+                      {cg.grade} {cg.classNum}
+                    </h2>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      출석 {classPresentCount} / {classStudentIds.length}명
+                    </span>
+                  </div>
+
+                  {/* 성별 그룹 */}
+                  <div className="space-y-5">
+                    {cg.genderGroups.map((gg) => {
+                      const genderPresentCount = gg.students.filter(
+                        (s) => attendance.get(s.id)?.status,
+                      ).length;
+
+                      return (
+                        <div key={gg.gender}>
+                          {/* 성별 서브헤더 */}
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-2 py-0.5 text-[10px] uppercase tracking-wider font-medium border",
+                                gg.gender === "남"
+                                  ? "bg-[oklch(0.93_0.04_250)] border-[oklch(0.75_0.08_250)] text-[oklch(0.32_0.05_250)]"
+                                  : gg.gender === "여"
+                                  ? "bg-[oklch(0.95_0.04_10)] border-[oklch(0.78_0.08_10)] text-[oklch(0.42_0.1_10)]"
+                                  : "bg-foreground/5 border-foreground/20 text-muted-foreground",
+                              )}
+                            >
+                              {gg.gender}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {genderPresentCount} / {gg.students.length}
+                            </span>
+                            <div className="flex-1 h-px bg-foreground/10" />
+                          </div>
+
+                          {/* 학생 카드 그리드 */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+                            {gg.students.map((s) => {
+                              const present = attendance.get(s.id)?.status ?? false;
+                              const isSaving = saving.has(s.id);
+                              const note = notes.get(s.id);
+                              const noteSaving = saving.has("note:" + s.id);
+                              const noteOpen = openNoteFor === s.id;
+                              const hasNote = !!note?.note;
+                              return (
+                                <div
+                                  key={s.id}
+                                  className={cn(
+                                    "relative bg-white border transition-all duration-150",
+                                    present
+                                      ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)]"
+                                      : "border-foreground/15",
+                                  )}
+                                >
+                                  {/* 상단 토글 영역 (admin만 클릭) */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(s)}
+                                    disabled={isSaving || !isAdmin}
+                                    className={cn(
+                                      "w-full text-left px-3 py-2.5",
+                                      isAdmin
+                                        ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                                        : "cursor-default",
+                                    )}
+                                  >
+                                    <div className="font-display text-base leading-tight mt-0.5">
+                                      {s.name}
+                                    </div>
+                                  </button>
+
+                                  {/* Stamp */}
+                                  {present && (
+                                    <div
+                                      className="absolute -top-2 -right-2 size-10 rounded-full border-2 border-[oklch(0.45_0.18_25)] text-[oklch(0.45_0.18_25)] flex items-center justify-center font-display italic text-[9px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm"
+                                      style={{ fontFeatureSettings: '"smcp"' }}
+                                    >
+                                      출석
+                                    </div>
+                                  )}
+                                  {isSaving && (
+                                    <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
+                                  )}
+
+                                  {/* 메모 영역 - 결석시에만 노출 */}
+                                  {!present && (
+                                    <div className="border-t border-foreground/10 px-2.5 py-1.5">
+                                      {noteOpen ? (
+                                        <NoteEditor
+                                          initial={note?.note ?? ""}
+                                          saving={noteSaving}
+                                          onSave={async (v) => {
+                                            await saveNote(s.id, v);
+                                            setOpenNoteFor(null);
+                                          }}
+                                          onCancel={() => setOpenNoteFor(null)}
+                                        />
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenNoteFor(s.id)}
+                                          className={cn(
+                                            "w-full text-left text-xs flex items-start gap-1 hover:text-foreground transition-colors",
+                                            hasNote ? "text-foreground/80" : "text-muted-foreground",
+                                          )}
+                                        >
+                                          <MessageSquare className="size-3 mt-0.5 shrink-0" />
+                                          <span className="line-clamp-2 text-[11px]">
+                                            {hasNote ? note!.note : "결석 사유…"}
+                                          </span>
+                                        </button>
+                                      )}
+                                      {hasNote && !noteOpen && note?.author_name && (
+                                        <div className="text-[10px] text-muted-foreground/70 mt-0.5 uppercase tracking-wider">
+                                          · {note.author_name}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </div>

@@ -285,20 +285,30 @@ export default function Roster() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             {editing?.kind === "student" &&
-              STUDENT_FIELDS.map((f) => (
-                <Field
-                  key={f}
-                  label={STUDENT_LABELS[f as string] ?? f}
-                  value={(editing.data as Record<string, unknown>)[f as string] as string | null}
-                  onChange={(v) =>
-                    setEditing({
-                      kind: "student",
-                      data: { ...editing.data, [f]: v },
-                    })
-                  }
-                  type={f === "birth_date" ? "date" : "text"}
-                />
-              ))}
+              STUDENT_FIELDS.map((f) =>
+                f === "gender" ? (
+                  <GenderSelect
+                    key={f}
+                    value={(editing.data as Record<string, unknown>)["gender"] as string | null}
+                    onChange={(v: string) =>
+                      setEditing({ kind: "student", data: { ...editing.data, gender: v } })
+                    }
+                  />
+                ) : (
+                  <Field
+                    key={f}
+                    label={STUDENT_LABELS[f as string] ?? f}
+                    value={(editing.data as Record<string, unknown>)[f as string] as string | null}
+                    onChange={(v) =>
+                      setEditing({
+                        kind: "student",
+                        data: { ...editing.data, [f]: v },
+                      })
+                    }
+                    type={f === "birth_date" ? "date" : "text"}
+                  />
+                ),
+              )}
             {editing?.kind === "teacher" && (
               <>
                 <Field
@@ -332,6 +342,31 @@ export default function Roster() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+function GenderSelect({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        성별
+      </span>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-background border border-input rounded-md h-9 px-3 text-sm"
+      >
+        <option value="">선택하세요</option>
+        <option value="남">남</option>
+        <option value="여">여</option>
+      </select>
+    </label>
   );
 }
 
