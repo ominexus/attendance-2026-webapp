@@ -1,68 +1,109 @@
-# 2026 고등부 출석부 웹서비스 프로젝트
+# 2026 고등부 출석부 웹서비스
 
-본 프로젝트는 기존 Google Sheets 기반의 고등부 출석부를 대체하기 위한 웹서비스 구축 프로젝트입니다. 현재 마일스톤 1단계(데이터베이스 설계 및 데이터 마이그레이션)가 완료되었습니다.
+기존 Google Sheets 기반 출석부를 대체하는 React + Vite + Supabase 웹앱. GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 담당합니다.
+
+## 진행 현황
+
+| 마일스톤 | 범위 | 상태 |
+| --- | --- | --- |
+| 1 | Supabase 프로젝트/스키마/RLS, 엑셀→DB 마이그레이션 | 완료 |
+| 2 | React + Vite + Tailwind + Supabase 인증 뼈대, GitHub Pages 자동 배포 | 완료 |
+| 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리 | 예정 |
 
 ## 디렉터리 구조
 
 ```text
-/mnt/desktop/MANUS/2026-attendance-webapp/
-├── README.md               # 프로젝트 개요 및 실행 방법 안내 (현재 파일)
-├── project_plan.md         # 프로젝트 구상 및 분석 결과 문서
-├── supabase/
-│   └── schema.sql          # Supabase PostgreSQL 스키마 (테이블, 인덱스, RLS, 뷰)
-└── scripts/
-    ├── migrate.py          # REST API 기반 마이그레이션 스크립트 (service_role 키 필요)
-    └── migrate_via_mcp.py  # MCP 도구 기반 마이그레이션 스크립트 (실제 사용됨)
+attendance-2026-webapp/
+├── .github/workflows/deploy.yml   # GitHub Pages 자동 배포 워크플로우
+├── client/                        # React + Vite 프론트엔드
+│   ├── index.html
+│   └── src/
+│       ├── App.tsx                # 라우팅 + Provider 조립
+│       ├── contexts/AuthContext.tsx
+│       ├── lib/supabase.ts        # Supabase 클라이언트 & 도메인 타입
+│       ├── pages/Login.tsx        # 로그인 페이지
+│       └── pages/Home.tsx         # 인증 후 학생 명단
+├── supabase/schema.sql            # DB 스키마/인덱스/RLS/뷰
+├── scripts/
+│   ├── migrate.py                 # REST API 기반 마이그레이션
+│   └── migrate_via_mcp.py         # MCP 기반 마이그레이션 (M1 실사용)
+├── server/                        # 정적 호스팅용 더미 (GitHub Pages에서는 미사용)
+├── vite.config.ts                 # `VITE_BASE` 환경변수로 Pages 경로 prefix 제어
+├── package.json
+└── project_plan.md
 ```
 
-## 마일스톤 1단계 완료 내역
+## 디자인 시스템
 
-1. **Supabase 프로젝트 생성**
-   * 프로젝트명: `attendance-2026`
-   * 리전: `ap-northeast-2` (서울)
-   * URL: `https://ovtgwbhbwtfwzgaihlmb.supabase.co`
+`Devotional Editorial` 컨셉. 페이퍼 톤 배경(`oklch(0.97 0.012 85)`)에 잉크 블루 액센트(`oklch(0.32 0.05 250)`), 본문은 `Pretendard Variable`, 디스플레이는 `Fraunces italic`. 출석 토글은 마일스톤 3에서 도장(stamp) 메타포로 구현 예정.
 
-2. **데이터베이스 스키마 구축 (`supabase/schema.sql`)**
-   * `teachers` (교사 명단), `students` (학생 명단), `attendance` (출석 기록) 테이블 생성.
-   * 조회 성능 최적화를 위한 인덱스 생성.
-   * 데이터 보안을 위한 Row Level Security (RLS) 정책 적용.
-   * 통계 산출을 위한 SQL View (`v_attendance_stats`, `v_student_attendance_summary`) 생성.
-
-3. **기존 엑셀 데이터 마이그레이션 (`scripts/migrate_via_mcp.py`)**
-   * `2026 고등부 출석부.xlsx` 파일 파싱.
-   * 교사 17명, 학생 66명, 출석 기록 749건(결석 제외)을 Supabase 데이터베이스에 성공적으로 삽입 및 검증 완료.
-
-## 스크립트 실행 방법
-
-### 1. REST API 기반 스크립트 (`migrate.py`)
-이 스크립트는 Supabase의 REST API를 사용하여 데이터를 삽입합니다. 실행하려면 `service_role` 권한을 가진 API 키가 필요합니다.
+## 로컬 개발
 
 ```bash
-# 필수 패키지 설치
+pnpm install
+pnpm dev               # http://localhost:3000
+```
+
+Supabase URL과 anon 키는 `client/src/lib/supabase.ts`에 fallback으로 포함되어 있어 추가 환경변수 없이 동작합니다. 다른 Supabase 인스턴스를 쓰려면 `.env.local`에 다음을 설정.
+
+```env
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
+```
+
+## 빌드
+
+```bash
+pnpm build:pages       # GitHub Pages용 정적 빌드 (dist/public)
+```
+
+로컬 자체 호스팅용으로는 `pnpm build` (server bundle 포함).
+
+## GitHub Pages 배포
+
+main 브랜치 push 시 `.github/workflows/deploy.yml`이 자동 실행. 사전 작업:
+
+1. Repository → Settings → Pages → Source를 **GitHub Actions**로 설정.
+2. Repository → Settings → Secrets and variables → Actions → New repository secret로 다음 두 개 등록:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+3. main에 push하면 워크플로우가 실행되어 `https://<user>.github.io/<repo>/` 에 배포.
+
+워크플로우는 `VITE_BASE=/${{ repo-name }}/`를 빌드 시 주입하여 정적 자원 경로를 자동 보정하고, SPA fallback을 위해 `index.html`을 `404.html`로 복사합니다.
+
+## Supabase 스키마 적용
+
+```bash
+# Supabase Dashboard → SQL Editor에서 실행하거나
+psql "$DATABASE_URL" -f supabase/schema.sql
+```
+
+스키마 적용 후 1회만 데이터 마이그레이션(아래) 실행.
+
+## 엑셀 → Supabase 마이그레이션
+
+```bash
 pip install openpyxl requests
 
-# 환경변수 설정
-export SUPABASE_URL="https://ovtgwbhbwtfwzgaihlmb.supabase.co"
-export SUPABASE_KEY="당신의_service_role_키"
+export SUPABASE_URL="https://<project>.supabase.co"
+export SUPABASE_KEY="<service_role_key>"   # anon 아님
 
-# Dry-run (실제 삽입 없이 파싱 결과만 확인)
-python3 scripts/migrate.py --excel-path "경로/2026 고등부 출석부.xlsx" --dry-run
-
-# 실제 마이그레이션 실행
-python3 scripts/migrate.py --excel-path "경로/2026 고등부 출석부.xlsx"
+python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx" --dry-run
+python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 ```
 
-### 2. MCP 기반 스크립트 (`migrate_via_mcp.py`)
-이 스크립트는 Manus 환경 내에서 `manus-mcp-cli` 도구를 활용하여 SQL 쿼리를 직접 실행합니다. (마일스톤 1단계에서 실제 데이터 삽입에 사용되었습니다.)
+마일스톤 1에서는 MCP 도구 기반 `scripts/migrate_via_mcp.py`로 교사 17명, 학생 66명, 출석 기록 749건을 적재 완료했습니다.
 
-```bash
-# 필수 패키지 설치
-pip install openpyxl
+## 라우팅
 
-# 실행 (Manus 샌드박스 환경 내에서만 동작)
-python3 scripts/migrate_via_mcp.py
-```
+| 경로 | 페이지 | 인증 |
+| --- | --- | --- |
+| `/` | 학생 명단 (마일스톤 3에서 출석 입력으로 확장) | 필요 |
+| `/login` | 이메일/패스워드 로그인 | 불필요 |
 
-## 다음 단계 (마일스톤 2단계)
-* Vite + React 기반의 프론트엔드 프로젝트 초기화.
-* Supabase Client 연동 및 로그인/인증 기능 구현.
+## 다음 단계 (마일스톤 3)
+
+- 주차 선택 + 학생 카드 출석 토글 UI (도장 애니메이션)
+- 출석률 통계 뷰 시각화 (recharts)
+- 교사/학생 CRUD 화면
+- 회원가입 또는 관리자 초대 기반 교사 계정 발급
