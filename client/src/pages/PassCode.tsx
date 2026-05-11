@@ -4,20 +4,23 @@
  *
  * 흐름:
  *  1. 사용자가 Pass Code 입력
- *  2. VITE_PASS_CODE 와 일치하면 VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD 로 Supabase signIn
- *  3. 성공 시 / 로 리다이렉트
- *  4. 실패 시 에러 메시지 표시
+ *  2. VITE_PASS_CODE 와 일치 여부 검증 (양쪽 trim() 후 비교)
+ *  3. 일치 시 VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD 로 Supabase signInWithPassword
+ *  4. 성공하면 / 로 리다이렉트
+ *  5. 실패 시 에러 메시지 표시
  *
- * 보안 메모: VITE_* 값은 빌드 번들에 포함됨. 실 데이터 보호는 Supabase RLS 가 담당.
+ * 보안 메모: VITE_* 값은 빌드 번들에 포함됨. 실 데이터 보호는 Supabase RLS 담당.
  */
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
-import { Loader2, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Loader2, KeyRound, Eye, EyeOff, AlertCircle } from "lucide-react";
 
-const PASS_CODE = import.meta.env.VITE_PASS_CODE ?? "";
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL ?? "";
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD ?? "";
+// 빌드 시 주입되는 환경변수 (양쪽 trim으로 공백 제거)
+const PASS_CODE = (import.meta.env.VITE_PASS_CODE ?? "").trim();
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL ?? "").trim();
+const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD ?? "").trim();
+const IS_DEV = import.meta.env.DEV;
 
 export default function PassCode() {
   const [, setLocation] = useLocation();
@@ -31,24 +34,37 @@ export default function PassCode() {
     inputRef.current?.focus();
   }, []);
 
+  // 환경변수 누락 여부 사전 진단
+  const envMissing = !PASS_CODE || !ADMIN_EMAIL || !ADMIN_PASSWORD;
+  const missingVars = [
+    !PASS_CODE && "VITE_PASS_CODE",
+    !ADMIN_EMAIL && "VITE_ADMIN_EMAIL",
+    !ADMIN_PASSWORD && "VITE_ADMIN_PASSWORD",
+  ].filter(Boolean);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    if (!PASS_CODE) {
-      setError("서버에 PASS_CODE 환경변수가 설정되지 않았습니다.");
+    if (envMissing) {
+      setError(`환경변수 미설정: ${missingVars.join(", ")}`);
       return;
     }
 
-    if (code !== PASS_CODE) {
+    // 입력값도 trim() 후 비교 (한영 전환 잔여 공백, 복사-붙여넣기 공백 처리)
+    const inputCode = code.trim();
+
+    if (inputCode !== PASS_CODE) {
       setError("코드가 일치하지 않습니다.");
+      // dev 모드에서만 길이 힌트 표시 (운영에서는 노출 안 함)
+      if (IS_DEV) {
+        console.debug(
+          `[PassCode] 입력 길이: ${inputCode.length}, env 길이: ${PASS_CODE.length}`,
+          `입력: "${inputCode}"`,
+        );
+      }
       setCode("");
       inputRef.current?.focus();
-      return;
-    }
-
-    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-      setError("관리자 계정 정보가 설정되지 않았습니다.");
       return;
     }
 
@@ -86,6 +102,22 @@ export default function PassCode() {
           <div className="mt-4 w-8 h-px bg-foreground/20 mx-auto" />
         </div>
 
+        {/* 환경변수 누락 경고 (빌드 누락 시 명확히 표시) */}
+        {envMissing && (
+          <div className="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-sm px-4 py-3 text-xs text-amber-800">
+            <AlertCircle className="size-4 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium mb-1">환경변수가 설정되지 않았습니다</div>
+              <div className="text-amber-700">
+                누락된 변수: <code>{missingVars.join(", ")}</code>
+              </div>
+              <div className="mt-1 text-amber-600">
+                GitHub Actions 워크플로우의 env 블록과 Repository Secrets를 확인해 주세요.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Card */}
         <form
           onSubmit={handleSubmit}
@@ -111,6 +143,9 @@ export default function PassCode() {
               }}
               placeholder="코드를 입력하세요"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               className="w-full border border-foreground/20 rounded-sm px-4 py-3 pr-10 text-sm bg-[oklch(0.97_0.012_85)] focus:outline-none focus:border-[oklch(0.32_0.05_250)] transition-colors placeholder:text-foreground/30 tracking-widest"
             />
             <button
@@ -125,13 +160,22 @@ export default function PassCode() {
 
           {/* Error */}
           {error && (
-            <p className="text-[oklch(0.55_0.2_25)] text-xs tracking-wide">{error}</p>
+            <div className="flex items-center gap-2 text-[oklch(0.55_0.2_25)] text-xs tracking-wide">
+              <AlertCircle className="size-3.5 shrink-0" />
+              <span>{error}</span>
+              {/* dev 모드에서만 env 길이 힌트 표시 */}
+              {IS_DEV && error.includes("일치하지") && (
+                <span className="ml-1 text-foreground/30">
+                  (env 길이: {PASS_CODE.length})
+                </span>
+              )}
+            </div>
           )}
 
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading || !code}
+            disabled={loading || !code.trim()}
             className="w-full py-3 bg-[oklch(0.32_0.05_250)] text-[oklch(0.97_0.012_85)] text-xs uppercase tracking-[0.2em] rounded-sm hover:bg-[oklch(0.28_0.05_250)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
