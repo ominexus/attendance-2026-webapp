@@ -40,6 +40,10 @@ jobs:
           # Supabase 환경변수는 Repository Secrets에서 주입
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Pass Code 단축 로그인 (빌드 번들에 포함됨 - 실 보호는 RLS 담당)
+          VITE_PASS_CODE: ${{ secrets.PASS_CODE }}
+          VITE_ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          VITE_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: pnpm build:pages
 
       - name: SPA fallback (copy index.html → 404.html)
