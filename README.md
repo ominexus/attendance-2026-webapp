@@ -15,6 +15,7 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 2 | React + Vite + Tailwind + Supabase 인증 뼈대, GitHub Pages 배포 설정 | 완료 |
 | 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리(CSV 업로드 포함) | 완료 |
 | 4-1 | 회원가입 + 관리자 초대 + role 구분(profiles + Edge Function) | 완료 |
+| 4-1.5 | **공개 조회 + 관리자 전용 입력** (RLS public read / admin write) | 완료 |
 | 4-2 | 알림, 결석 사유 메모 | 예정 |
 
 ---
@@ -39,7 +40,8 @@ attendance-2026-webapp/
 ├── supabase/
 │   ├── schema.sql                  # M1 스키마/인덱스/RLS/뷰
 │   ├── migrations/
-│   │   └── 20260511_profiles_and_invites.sql  # M4-1: profiles 테이블 + role + 트리거
+│   │   ├── 20260511_profiles_and_invites.sql  # M4-1: profiles 테이블 + role + 트리거
+│   │   └── 20260511_public_read_admin_write.sql # M4-1.5: 공개 조회 + 관리자 쓰기 정책
 │   └── functions/
 │       └── invite-user/index.ts    # M4-1: 관리자 전용 초대 Edge Function
 ├── scripts/
@@ -227,14 +229,14 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 ## 라우팅
 
-| 경로 | 페이지 | 인증 필요 |
-| --- | --- | --- |
-| `/` | 출석 입력 (도장 토글 + Optimistic UI) | O |
-| `/stats` | 주차별/반별 출석 통계 대시보드 | O |
-| `/roster` | 학생/교사 CRUD + 사용자 계정 탭(관리자용 초대/role 변경) | O |
-| `/login` | 이메일/패스워드 로그인 | X |
-| `/signup` | 교사 자마 가입 | X |
-| `/set-password` | 초대 링크 수락 후 비밀번호 설정 | X (초대 토큰으로 자동 로그인) |
+| 경로 | 페이지 | 비로그인 조회 | 입력 |
+| --- | --- | --- | --- |
+| `/` | 출석 (도장 토글 + Optimistic UI) | O | admin 만 |
+| `/stats` | 주차별/반별 출석 통계 대시보드 | O | 읽기 전용 |
+| `/roster` | 학생/교사 명단 + 사용자 계정 탭 | O | admin 만 (사용자 계정 탭은 admin 한정 표시) |
+| `/login` | 이메일/패스워드 로그인 | O | - |
+| `/signup` | 교사 자마 가입 | O | - |
+| `/set-password` | 초대 링크 수락 후 비밀번호 설정 | O | - |
 
 ### 주요 기능
 
@@ -266,15 +268,26 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 
 ---
 
-## 인증/권한 (마일스톤 4-1)
+## 인증/권한 (마일스톤 4-1 / 4-1.5)
+
+### 정책 모델 (M4-1.5)
+
+| 테이블 | SELECT | INSERT/UPDATE/DELETE |
+| --- | --- | --- |
+| `attendance`, `students`, `teachers` | **anon + authenticated 모두 허용** | `is_admin()` 만 허용 |
+| `profiles` | 본인 + admin | 본인 UPDATE(역할 제외) + admin 전체 |
+
+결과:
+
+- 비로그인 방문자도 출석/통계/명단을 그대로 조회 가능 (열람용 공개 사이트로 사용 가능)
+- 일반 인증 사용자(teacher 역할)도 쓰기 불가 — 관리자(admin)만 출석 입력/명단 수정/일괄 업로드/초대 가능
+- 프론트엔드는 `useAuth().isAdmin` 으로 입력 UI(도장 토글, +/편집/삭제, 일괄 등록, 사용자 계정 탭)를 분기 표시
 
 ### 구조
 
 - `auth.users` ↔ `public.profiles` (1:1, 가입 시 트리거로 자동 생성)
 - `profiles.role`: `admin` | `teacher` (기본 `teacher`)
-- `is_admin()` SQL 함수 + RLS:
-  - profiles: 본인만 SELECT/UPDATE, admin 은 전체 SELECT/UPDATE/DELETE
-  - role 변경은 admin 만 가능
+- `is_admin()` SECURITY DEFINER 함수로 RLS 가드
 
 ### 회원가입 흐름
 
@@ -313,4 +326,5 @@ update public.profiles set role='admin' where email='admin@example.com';
 
 - 결석 사유 메모 필드
 - 주간 출석 마감 알림 (Edge Function + Push)
-- 반별 담당 교사 권한 구분
+- 반별 담당 교사 쓰기 권한 분리 (admin 외에도 자기 반만 입력 허용)
+- 출결 통계 PDF/CSV 내보내기

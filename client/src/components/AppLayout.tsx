@@ -1,12 +1,21 @@
 // Devotional Editorial 공통 레이아웃
+// - 비로그인 허용 (Public Read 정책에 따라 조회만 가능)
+// - 로그인 시 관리자/일반 식별 배지 표시
 // - 좌측 narrow rail에 네비게이션 (잉크 블루 배경)
-// - 우측 wide canvas (페이퍼 톤 배경)
-// - 상단 magazine masthead
-import { ReactNode, useEffect } from "react";
+import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, Stamp, BarChart3, Users, Loader2 } from "lucide-react";
+import {
+  LogOut,
+  LogIn,
+  Stamp,
+  BarChart3,
+  Users,
+  Loader2,
+  ShieldCheck,
+  Eye,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -23,15 +32,9 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, isAdmin, profile } = useAuth();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      setLocation("/login");
-    }
-  }, [loading, user, setLocation]);
-
-  if (loading || !user) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[oklch(0.97_0.012_85)]">
         <Loader2 className="animate-spin size-6 text-foreground/40" />
@@ -45,7 +48,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <aside className="hidden md:flex w-56 flex-col bg-[oklch(0.32_0.05_250)] text-[oklch(0.97_0.012_85)] py-8 px-5">
         <div className="mb-12">
           <div className="text-[10px] tracking-[0.3em] uppercase opacity-60">Vol. 2026</div>
-          <div className="font-display italic text-2xl mt-1 leading-tight">고등부<br />출석부</div>
+          <div className="font-display italic text-2xl mt-1 leading-tight">
+            고등부
+            <br />
+            출석부
+          </div>
         </div>
 
         <nav className="flex-1 space-y-1">
@@ -70,24 +77,47 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-white/10 pt-4 space-y-2">
-          <div className="text-[10px] uppercase tracking-wider opacity-50">서명자</div>
-          <div className="text-xs truncate">{user.email}</div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={signOut}
-            className="w-full justify-start gap-2 text-xs uppercase tracking-wider text-white/70 hover:text-white hover:bg-white/10 px-2"
-          >
-            <LogOut className="size-3.5" />
-            Sign Out
-          </Button>
+          {user ? (
+            <>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-70">
+                {isAdmin ? <ShieldCheck className="size-3" /> : <Eye className="size-3" />}
+                {isAdmin ? "Admin" : "Viewer"}
+              </div>
+              <div className="text-xs truncate" title={user.email ?? ""}>
+                {profile?.display_name || user.email}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={signOut}
+                className="w-full justify-start gap-2 text-xs uppercase tracking-wider text-white/70 hover:text-white hover:bg-white/10 px-2"
+              >
+                <LogOut className="size-3.5" />
+                Sign Out
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="text-[10px] uppercase tracking-wider opacity-50">
+                Guest · 조회 전용
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setLocation("/login")}
+                className="w-full justify-start gap-2 text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20"
+              >
+                <LogIn className="size-3.5" />
+                Sign In
+              </Button>
+            </>
+          )}
         </div>
       </aside>
 
       {/* Mobile top nav */}
       <div className="md:hidden fixed top-0 inset-x-0 z-40 bg-[oklch(0.32_0.05_250)] text-[oklch(0.97_0.012_85)] flex items-center justify-between px-4 py-3">
         <div className="font-display italic text-base">고등부 출석부</div>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           {NAV_ITEMS.map(({ path, label, Icon }) => (
             <Link key={path} href={path}>
               <a
@@ -101,6 +131,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </a>
             </Link>
           ))}
+          {user ? (
+            <button
+              onClick={signOut}
+              className="ml-1 px-2 py-1.5 text-[10px] opacity-70"
+              title="Sign out"
+            >
+              <LogOut className="size-3" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setLocation("/login")}
+              className="ml-1 px-2 py-1.5 text-[10px]"
+              title="Sign in"
+            >
+              <LogIn className="size-3" />
+            </button>
+          )}
         </div>
       </div>
 

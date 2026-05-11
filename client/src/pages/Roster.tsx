@@ -45,6 +45,7 @@ const STUDENT_LABELS: Record<string, string> = {
 };
 
 export default function Roster() {
+  const { isAdmin } = useAuth();
   const [tab, setTab] = useState<Tab>("students");
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -181,47 +182,49 @@ export default function Roster() {
             <h1 className="font-display text-4xl italic mt-1">명단 관리</h1>
           </div>
 
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={downloadTemplate}
-              className="bg-white"
-            >
-              <Download className="size-3.5" />
-              템플릿
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-white"
-            >
-              <Upload className="size-3.5" />
-              일괄 등록
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              hidden
-              onChange={(e) => e.target.files?.[0] && bulkUpload(e.target.files[0])}
-            />
-            <Button
-              size="sm"
-              onClick={() =>
-                setEditing(
-                  tab === "students"
-                    ? { kind: "student", data: { grade: "1학년", class_num: "1반" } }
-                    : { kind: "teacher", data: { role: "교사" } },
-                )
-              }
-              className="bg-[oklch(0.32_0.05_250)] text-white hover:bg-[oklch(0.28_0.05_250)]"
-            >
-              <Plus className="size-3.5" />
-              추가
-            </Button>
-          </div>
+          {isAdmin && tab !== "users" && (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadTemplate}
+                className="bg-white"
+              >
+                <Download className="size-3.5" />
+                템플릿
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-white"
+              >
+                <Upload className="size-3.5" />
+                일괄 등록
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                hidden
+                onChange={(e) => e.target.files?.[0] && bulkUpload(e.target.files[0])}
+              />
+              <Button
+                size="sm"
+                onClick={() =>
+                  setEditing(
+                    tab === "students"
+                      ? { kind: "student", data: { grade: "1학년", class_num: "1반" } }
+                      : { kind: "teacher", data: { role: "교사" } },
+                  )
+                }
+                className="bg-[oklch(0.32_0.05_250)] text-white hover:bg-[oklch(0.28_0.05_250)]"
+              >
+                <Plus className="size-3.5" />
+                추가
+              </Button>
+            </div>
+          )}
         </header>
 
         {/* Tabs + Search */}
@@ -261,12 +264,14 @@ export default function Roster() {
         ) : tab === "students" ? (
           <StudentTable
             rows={filteredStudents}
+            canWrite={isAdmin}
             onEdit={(s) => setEditing({ kind: "student", data: s })}
             onDelete={(s) => remove("students", s.id, s.name)}
           />
         ) : tab === "teachers" ? (
           <TeacherTable
             rows={filteredTeachers}
+            canWrite={isAdmin}
             onEdit={(t) => setEditing({ kind: "teacher", data: t })}
             onDelete={(t) => remove("teachers", t.id, t.name)}
           />
@@ -359,10 +364,12 @@ function Field({
 
 function StudentTable({
   rows,
+  canWrite,
   onEdit,
   onDelete,
 }: {
   rows: Student[];
+  canWrite: boolean;
   onEdit: (s: Student) => void;
   onDelete: (s: Student) => void;
 }) {
@@ -377,7 +384,7 @@ function StudentTable({
             <th className="px-4 py-3">학교</th>
             <th className="px-4 py-3">지도교사</th>
             <th className="px-4 py-3">연락처</th>
-            <th className="px-4 py-3 w-24" />
+            {canWrite && <th className="px-4 py-3 w-24" />}
           </tr>
         </thead>
         <tbody>
@@ -391,6 +398,7 @@ function StudentTable({
               <td className="px-4 py-2.5 text-xs">{s.school}</td>
               <td className="px-4 py-2.5 text-xs">{s.guide}</td>
               <td className="px-4 py-2.5 text-xs tabular-nums">{s.phone}</td>
+              {canWrite && (
               <td className="px-4 py-2.5 text-right">
                 <Button variant="ghost" size="icon" onClick={() => onEdit(s)}>
                   <Pencil className="size-3.5" />
@@ -399,6 +407,7 @@ function StudentTable({
                   <Trash2 className="size-3.5 text-destructive" />
                 </Button>
               </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -412,10 +421,12 @@ function StudentTable({
 
 function TeacherTable({
   rows,
+  canWrite,
   onEdit,
   onDelete,
 }: {
   rows: Teacher[];
+  canWrite: boolean;
   onEdit: (t: Teacher) => void;
   onDelete: (t: Teacher) => void;
 }) {
@@ -426,7 +437,7 @@ function TeacherTable({
           <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
             <th className="px-4 py-3">역할</th>
             <th className="px-4 py-3">이름</th>
-            <th className="px-4 py-3 w-24" />
+            {canWrite && <th className="px-4 py-3 w-24" />}
           </tr>
         </thead>
         <tbody>
@@ -434,6 +445,7 @@ function TeacherTable({
             <tr key={t.id} className="border-t border-foreground/10 hover:bg-[oklch(0.97_0.012_85)]">
               <td className="px-4 py-2.5 text-xs">{t.role}</td>
               <td className="px-4 py-2.5 font-medium">{t.name}</td>
+              {canWrite && (
               <td className="px-4 py-2.5 text-right">
                 <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
                   <Pencil className="size-3.5" />
@@ -442,6 +454,7 @@ function TeacherTable({
                   <Trash2 className="size-3.5 text-destructive" />
                 </Button>
               </td>
+              )}
             </tr>
           ))}
         </tbody>

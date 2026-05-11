@@ -8,7 +8,9 @@ import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +28,7 @@ function shiftDate(yyyymmdd: string, days: number): string {
 }
 
 export default function Home() {
+  const { isAdmin, user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [date, setDate] = useState<string>(lastSunday());
@@ -109,6 +112,12 @@ export default function Home() {
 
   // 출석 토글 (Optimistic + Supabase)
   async function toggle(student: Student) {
+    if (!isAdmin) {
+      toast.error("입력 권한이 없습니다", {
+        description: user ? "관리자만 출석을 수정할 수 있습니다." : "로그인 후 관리자 권한이 필요합니다.",
+      });
+      return;
+    }
     const current = attendance.get(student.id);
     const next = !current?.status;
 
@@ -176,10 +185,20 @@ export default function Home() {
           <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground">
             Issue · {date}
           </div>
-          <h1 className="font-display text-4xl italic mt-1">출석 입력</h1>
+          <h1 className="font-display text-4xl italic mt-1">
+            {isAdmin ? "출석 입력" : "출석 조회"}
+          </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-xl">
-            학생 카드를 누르면 도장이 찍힙니다. 변경은 즉시 반영되며 네트워크 실패 시 자동 복원됩니다.
+            {isAdmin
+              ? "학생 카드를 누르면 도장이 찍힙니다. 변경은 즉시 반영되며 네트워크 실패 시 자동 복원됩니다."
+              : "조회 전용 모드입니다. 출석 입력은 관리자 권한이 필요합니다."}
           </p>
+          {!isAdmin && (
+            <div className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-wider px-3 py-1.5 bg-foreground/5 border border-foreground/15 text-muted-foreground">
+              {user ? <Eye className="size-3" /> : <ShieldCheck className="size-3" />}
+              {user ? "Viewer·읽기 전용" : <>관리자이시라면 <Link href="/login"><a className="underline ml-1">로그인</a></Link></>}
+            </div>
+          )}
         </header>
 
         {/* Controls */}
@@ -278,10 +297,12 @@ export default function Home() {
                 <button
                   key={s.id}
                   onClick={() => toggle(s)}
-                  disabled={isSaving}
+                  disabled={isSaving || !isAdmin}
                   className={cn(
                     "relative group text-left bg-white border px-4 py-3 transition-all duration-150",
-                    "hover:-translate-y-0.5 hover:shadow-md",
+                    isAdmin
+                      ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                      : "cursor-default",
                     present
                       ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)]"
                       : "border-foreground/15",
