@@ -16,7 +16,8 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 3 | 출석 입력 UI, 통계 대시보드, 학생/교사 관리(CSV 업로드 포함) | 완료 |
 | 4-1 | 회원가입 + 관리자 초대 + role 구분(profiles + Edge Function) | 완료 |
 | 4-1.5 | **공개 조회 + 관리자 전용 입력** (RLS public read / admin write) | 완료 |
-| 4-2 | 알림, 결석 사유 메모 | 예정 |
+| 4-2 | UI 단순화: Guest/Admin 2모드, 회원가입/초대 UI 제거 | 완료 |
+| 4-3 | 알림, 결석 사유 메모 | 예정 |
 
 ---
 
@@ -233,10 +234,10 @@ python3 scripts/migrate.py --excel-path "2026 고등부 출석부.xlsx"
 | --- | --- | --- | --- |
 | `/` | 출석 (도장 토글 + Optimistic UI) | O | admin 만 |
 | `/stats` | 주차별/반별 출석 통계 대시보드 | O | 읽기 전용 |
-| `/roster` | 학생/교사 명단 + 사용자 계정 탭 | O | admin 만 (사용자 계정 탭은 admin 한정 표시) |
+| `/roster` | 학생/교사 명단 | O | admin 만 (입력/편집/삭제/일괄등록 버튼은 admin에서만 표시) |
 | `/login` | 이메일/패스워드 로그인 | O | - |
-| `/signup` | 교사 자마 가입 | O | - |
-| `/set-password` | 초대 링크 수락 후 비밀번호 설정 | O | - |
+| `/signup` | 교사 자마 가입 | O (직접 URL 접근 시만 노출, UI 진입점 제거) | - |
+| `/set-password` | 초대 링크 수락 후 비밀번호 설정 | O (직접 URL 접근 시만, 초대 토큰 필요) | - |
 
 ### 주요 기능
 

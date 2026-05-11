@@ -105,11 +105,8 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="mt-8 text-[11px] text-muted-foreground leading-relaxed flex items-center justify-between">
-            <Link href="/signup">
-              <a className="underline underline-offset-4 hover:text-foreground">계정 만들기</a>
-            </Link>
-            <span>관리자가 보낸 초대 메일도 사용 가능</span>
+          <div className="mt-8 text-[11px] text-muted-foreground leading-relaxed text-center">
+            <span>관리자 계정으로 로그인하면 출석 입력이 가능합니다.</span>
           </div>
         </div>
       </main>

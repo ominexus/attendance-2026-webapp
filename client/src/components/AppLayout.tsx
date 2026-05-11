@@ -77,11 +77,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-white/10 pt-4 space-y-2">
-          {user ? (
+          {user && isAdmin ? (
             <>
               <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-70">
-                {isAdmin ? <ShieldCheck className="size-3" /> : <Eye className="size-3" />}
-                {isAdmin ? "Admin" : "Viewer"}
+                <ShieldCheck className="size-3" />
+                Admin
               </div>
               <div className="text-xs truncate" title={user.email ?? ""}>
                 {profile?.display_name || user.email}
@@ -98,17 +98,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </>
           ) : (
             <>
-              <div className="text-[10px] uppercase tracking-wider opacity-50">
-                Guest · 조회 전용
-              </div>
               <Button
                 size="sm"
                 onClick={() => setLocation("/login")}
                 className="w-full justify-start gap-2 text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20"
               >
                 <LogIn className="size-3.5" />
-                Sign In
+                {user ? "Sign Out" : "Sign In (Admin)"}
               </Button>
+              {user && (
+                <button
+                  onClick={signOut}
+                  className="w-full text-left text-[10px] uppercase tracking-wider opacity-40 hover:opacity-70 px-2 py-1"
+                >
+                  로그아웃
+                </button>
+              )}
             </>
           )}
         </div>

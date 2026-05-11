@@ -2,14 +2,14 @@
 // - 학생/교사 탭 전환
 // - 인라인 편집 다이얼로그 (생성/수정/삭제)
 // - CSV/XLSX 일괄 업로드 (헤더 자동 매핑)
-import { useEffect, useMemo, useRef, useState, FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Teacher } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth, type Profile } from "@/contexts/AuthContext";
-import { Mail, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+
 import {
   Dialog,
   DialogContent,
@@ -17,11 +17,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Pencil, Trash2, Upload, Download, UserCog } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
-type Tab = "students" | "teachers" | "users";
+type Tab = "students" | "teachers";
 
 const STUDENT_FIELDS: Array<keyof Student> = [
   "grade",
@@ -182,7 +182,7 @@ export default function Roster() {
             <h1 className="font-display text-4xl italic mt-1">명단 관리</h1>
           </div>
 
-          {isAdmin && tab !== "users" && (
+          {isAdmin && (
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -230,7 +230,7 @@ export default function Roster() {
         {/* Tabs + Search */}
         <div className="flex items-center justify-between mb-4 border-b border-foreground/15">
           <div className="flex">
-            {(["students", "teachers", "users"] as Tab[]).map((t) => (
+            {(["students", "teachers"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -240,11 +240,7 @@ export default function Roster() {
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t === "students"
-                  ? `학생 (${students.length})`
-                  : t === "teachers"
-                    ? `교사 (${teachers.length})`
-                    : `사용자 계정`}
+                {t === "students" ? `학생 (${students.length})` : `교사 (${teachers.length})`}
               </button>
             ))}
           </div>
@@ -275,9 +271,7 @@ export default function Roster() {
             onEdit={(t) => setEditing({ kind: "teacher", data: t })}
             onDelete={(t) => remove("teachers", t.id, t.name)}
           />
-        ) : (
-          <UsersPanel />
-        )}
+        ) : null}
       </div>
 
       {/* Edit Dialog */}
@@ -462,242 +456,6 @@ function TeacherTable({
       {rows.length === 0 && (
         <div className="text-center text-muted-foreground text-sm py-12">결과가 없습니다.</div>
       )}
-    </div>
-  );
-}
-
-// ── 관리자 사용자 패널 ────────────────────────────────────────────────────
-function UsersPanel() {
-  const { isAdmin, profile, session } = useAuth();
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "teacher">("teacher");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function reload() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast.error("불러오기 실패", { description: error.message });
-    } else {
-      setProfiles((data ?? []) as Profile[]);
-    }
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    reload();
-  }, []);
-
-  async function changeRole(p: Profile, next: "admin" | "teacher") {
-    if (p.id === profile?.id && next !== "admin") {
-      if (!confirm("자신의 관리자 권한을 해제하시겠습니까? 이후 이 화면에 다시 접근할 수 없습니다.")) {
-        return;
-      }
-    }
-    const prev = p.role;
-    setProfiles((arr) => arr.map((x) => (x.id === p.id ? { ...x, role: next } : x)));
-    const { error } = await supabase.from("profiles").update({ role: next }).eq("id", p.id);
-    if (error) {
-      setProfiles((arr) => arr.map((x) => (x.id === p.id ? { ...x, role: prev } : x)));
-      toast.error("권한 변경 실패", { description: error.message });
-    } else {
-      toast.success(`${p.email} → ${next}`);
-    }
-  }
-
-  async function invite(e: FormEvent) {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    setSubmitting(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("invite-user", {
-        body: {
-          email: inviteEmail.trim(),
-          display_name: inviteName.trim() || null,
-          role: inviteRole,
-        },
-      });
-      if (error) throw error;
-      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-      toast.success("초대 메일을 보냈습니다", { description: inviteEmail });
-      setInviteEmail("");
-      setInviteName("");
-      setInviteRole("teacher");
-      await reload();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("초대 실패", { description: msg });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (!session) {
-    return (
-      <div className="text-sm text-muted-foreground py-12 text-center">
-        로그인 후 사용 가능합니다.
-      </div>
-    );
-  }
-  if (!isAdmin) {
-    return (
-      <div className="border border-foreground/15 bg-white p-6 max-w-lg">
-        <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground mb-2">
-          Admin only
-        </div>
-        <p className="text-sm leading-relaxed">
-          이 영역은 관리자 권한을 가진 사용자만 사용할 수 있습니다.<br />
-          현재 권한: <strong>{profile?.role ?? "unknown"}</strong>
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid lg:grid-cols-[1fr_320px] gap-8">
-      {/* 사용자 목록 */}
-      <div className="border border-foreground/15 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-[oklch(0.95_0.012_85)] text-[10px] uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="text-left px-4 py-3">이메일</th>
-              <th className="text-left px-4 py-3">표시 이름</th>
-              <th className="text-left px-4 py-3">권한</th>
-              <th className="text-left px-4 py-3">가입일</th>
-              <th className="px-4 py-3 w-32"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  <Loader2 className="inline animate-spin size-4 mr-2" />
-                  불러오는 중…
-                </td>
-              </tr>
-            )}
-            {!loading &&
-              profiles.map((p) => (
-                <tr key={p.id} className="border-t border-foreground/10">
-                  <td className="px-4 py-3 font-mono text-xs">{p.email}</td>
-                  <td className="px-4 py-3">{p.display_name ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm ${
-                        p.role === "admin"
-                          ? "bg-[oklch(0.32_0.05_250)] text-white"
-                          : "bg-foreground/10 text-foreground"
-                      }`}
-                    >
-                      {p.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {new Date(p.created_at).toLocaleDateString("ko-KR")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => changeRole(p, p.role === "admin" ? "teacher" : "admin")}
-                      className="bg-white text-xs"
-                    >
-                      <UserCog className="size-3.5" />
-                      {p.role === "admin" ? "교사로" : "관리자로"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            {!loading && profiles.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground text-sm">
-                  등록된 사용자가 없습니다. 아래 폼으로 첫 사용자를 초대해 보세요.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 초대 폼 */}
-      <aside className="border border-foreground/15 bg-white p-5 h-fit space-y-4">
-        <div>
-          <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground mb-2">
-            Invite
-          </div>
-          <h3 className="font-display text-xl italic flex items-center gap-2">
-            <Mail className="size-4" /> 사용자 초대
-          </h3>
-          <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-            이메일로 초대 링크를 발송합니다. 수신자는 링크 → 비밀번호 설정 후 즉시 로그인됩니다.
-          </p>
-        </div>
-        <form onSubmit={invite} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="invemail" className="text-xs uppercase tracking-wider">
-              Email
-            </Label>
-            <Input
-              id="invemail"
-              type="email"
-              required
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className="h-9"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="invname" className="text-xs uppercase tracking-wider">
-              Name (옵션)
-            </Label>
-            <Input
-              id="invname"
-              value={inviteName}
-              onChange={(e) => setInviteName(e.target.value)}
-              className="h-9"
-              placeholder="홍길동"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider">Role</Label>
-            <div className="flex gap-2">
-              {(["teacher", "admin"] as const).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setInviteRole(r)}
-                  className={`flex-1 text-xs uppercase tracking-wider px-3 py-2 border ${
-                    inviteRole === r
-                      ? "bg-[oklch(0.32_0.05_250)] text-white border-[oklch(0.32_0.05_250)]"
-                      : "bg-white border-foreground/20"
-                  }`}
-                >
-                  {r === "admin" ? (
-                    <span className="flex items-center justify-center gap-1">
-                      <ShieldCheck className="size-3.5" /> Admin
-                    </span>
-                  ) : (
-                    "Teacher"
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-none h-10 bg-[oklch(0.32_0.05_250)] hover:bg-[oklch(0.28_0.05_250)] text-sm uppercase tracking-wider"
-          >
-            {submitting ? <Loader2 className="animate-spin size-4" /> : "초대 보내기"}
-          </Button>
-        </form>
-      </aside>
     </div>
   );
 }
