@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
-import { Loader2, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, MessageSquare } from "lucide-react";
+import { DateSpinner } from "@/components/DateSpinner";
 import { useSelectedDate } from "@/contexts/SelectedDateContext";
 import { toast } from "sonner";
 import {
@@ -55,7 +56,7 @@ export default function Stats() {
   const [loading, setLoading] = useState(true);
 
   // 기준일: SelectedDateContext와 동기화
-  const { selectedDate: refDate, setSelectedDate } = useSelectedDate();
+  const { selectedDate: refDate } = useSelectedDate();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,20 +84,6 @@ export default function Stats() {
     })();
     return () => { cancelled = true; };
   }, []);
-
-  // 기준일 이동
-  function moveWeek(delta: number) {
-    const d = new Date(refDate + "T00:00:00");
-    d.setDate(d.getDate() + delta * 7);
-    setSelectedDate(d.toISOString().slice(0, 10));
-  }
-
-  // 기준일 변경 (date input → 가장 가까운 일요일로 snap)
-  function handleDateInput(val: string) {
-    if (!val) return;
-    const snapped = lastSundayFrom(val);
-    setSelectedDate(snapped);
-  }
 
   // 메모 → 학생 조인 맵
   const studentMap = useMemo(() => {
@@ -260,7 +247,6 @@ export default function Stats() {
     });
   }, [students, attendance, notes, refDate, fourWeeksAgo]);
 
-  const isToday = refDate === todayLastSunday();
 
   return (
     <AppLayout>
@@ -274,40 +260,7 @@ export default function Stats() {
           {/* 기준일 변경 컨트롤 */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span className="text-xs text-muted-foreground uppercase tracking-wider">기준일</span>
-            <div className="flex items-center gap-1 border border-foreground/20 bg-white">
-              <button
-                type="button"
-                onClick={() => moveWeek(-1)}
-                className="px-2 py-1.5 hover:bg-foreground/5 transition-colors border-r border-foreground/10"
-                title="1주 이전"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <input
-                type="date"
-                value={refDate}
-                onChange={(e) => handleDateInput(e.target.value)}
-                className="text-sm tabular-nums px-2 py-1 bg-transparent focus:outline-none w-36"
-              />
-              <button
-                type="button"
-                onClick={() => moveWeek(1)}
-                disabled={isToday}
-                className="px-2 py-1.5 hover:bg-foreground/5 transition-colors border-l border-foreground/10 disabled:opacity-30"
-                title="1주 이후"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-            </div>
-            {!isToday && (
-              <button
-                type="button"
-                onClick={() => setSelectedDate(todayLastSunday())}
-                className="text-[10px] uppercase tracking-wider text-[oklch(0.32_0.05_250)] hover:underline"
-              >
-                오늘로 돌아가기
-              </button>
-            )}
+            <DateSpinner />
             <span className="text-[10px] text-muted-foreground/60">활동 학생 기준</span>
           </div>
         </header>

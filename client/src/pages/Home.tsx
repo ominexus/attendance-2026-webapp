@@ -9,20 +9,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSelectedDate, toSunday } from "@/contexts/SelectedDateContext";
-import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck, MessageSquare, Check } from "lucide-react";
+import { DateSpinner } from "@/components/DateSpinner";
+import { Loader2, Eye, ShieldCheck, MessageSquare, Check } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
-
-function shiftDate(yyyymmdd: string, days: number): string {
-  const d = new Date(yyyymmdd + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 function normalizeGender(g: string | null): "남" | "여" | "미지정" {
   if (!g) return "미지정";
@@ -48,10 +42,9 @@ export default function Home() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map());
-  const { selectedDate, setSelectedDate } = useSelectedDate();
+  const { selectedDate, refreshDates } = useSelectedDate();
   // Home은 일요일 단위 운영 - 선택 날짜를 일요일로 보정해서 사용
   const date = toSunday(selectedDate);
-  const setDate = (d: string) => setSelectedDate(toSunday(d));
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
   const [showInactive, setShowInactive] = useState<boolean>(false);
@@ -205,6 +198,9 @@ export default function Home() {
 
     if (attData) setAttendance((prev) => new Map(prev).set(student.id, attData as Attendance));
 
+    // 이 날짜가 availableDates에 없으면 새 날짜 → 목록 갱신
+    refreshDates();
+
     if (willPromote) {
       const { error: promoteError } = await supabase
         .from("students").update({ is_active: true }).eq("id", student.id);
@@ -306,15 +302,7 @@ export default function Home() {
         <div className="bg-white/60 backdrop-blur-sm border border-foreground/10 px-5 py-4 mb-8 grid sm:grid-cols-[auto_1fr_1fr] gap-4 items-end">
           <div>
             <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">날짜</label>
-            <div className="flex items-center gap-1">
-              <Button size="icon" variant="ghost" onClick={() => setDate(shiftDate(date, -7))} aria-label="이전 주">
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-40" />
-              <Button size="icon" variant="ghost" onClick={() => setDate(shiftDate(date, 7))} aria-label="다음 주">
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
+            <DateSpinner snapToSunday />
           </div>
           <div>
             <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">학년</label>
