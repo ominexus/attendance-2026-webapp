@@ -3,6 +3,8 @@
 // 마일스톤 4-6: 반별 → 남/여 그룹핑
 // 마일스톤 4-7: 행동 지표 (출석·결석·메모) 헤더
 // 마일스톤 4-8: is_active 활동학생 필터링 + 자동 승격
+// 마일스톤 4-9: 학생 카드 이름 클릭 → 출석 이력 패널 연동
+//              카드 배경 클릭 → 출석 토글 (기존 동작 유지)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
@@ -13,6 +15,7 @@ import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck, MessageSquare, Ch
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
 
 function lastSunday(d: Date = new Date()): string {
   const x = new Date(d);
@@ -53,11 +56,12 @@ export default function Home() {
   const [date, setDate] = useState<string>(lastSunday());
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
-  // 관리자 전용: 비활동 학생 표시 여부 (기본 숨기기)
   const [showInactive, setShowInactive] = useState<boolean>(false);
   const [fetching, setFetching] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [openNoteFor, setOpenNoteFor] = useState<string | null>(null);
+  // 이력 패널
+  const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,11 +73,8 @@ export default function Home() {
         .order("class_num")
         .order("name");
       if (cancelled) return;
-      if (error) {
-        toast.error("학생 명단 로드 실패: " + error.message);
-      } else {
-        setStudents((data as Student[]) ?? []);
-      }
+      if (error) toast.error("학생 명단 로드 실패: " + error.message);
+      else setStudents((data as Student[]) ?? []);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -87,16 +88,14 @@ export default function Home() {
         supabase.from("absence_notes").select("*").eq("attend_date", date),
       ]);
       if (cancelled) return;
-      if (attRes.error) {
-        toast.error("출석 로드 실패: " + attRes.error.message);
-      } else {
+      if (attRes.error) toast.error("출석 로드 실패: " + attRes.error.message);
+      else {
         const m = new Map<string, Attendance>();
         for (const a of (attRes.data as Attendance[]) ?? []) m.set(a.student_id, a);
         setAttendance(m);
       }
-      if (noteRes.error) {
-        toast.error("메모 로드 실패: " + noteRes.error.message);
-      } else {
+      if (noteRes.error) toast.error("메모 로드 실패: " + noteRes.error.message);
+      else {
         const nm = new Map<string, AbsenceNote>();
         for (const n of (noteRes.data as AbsenceNote[]) ?? []) nm.set(n.student_id, n);
         setNotes(nm);
@@ -122,9 +121,6 @@ export default function Home() {
     [students, gradeFilter],
   );
 
-  // 표시할 학생 목록:
-  // - 비로그인/비관리자: is_active=true만
-  // - 관리자: showInactive=false면 is_active=true만, true면 전체
   const filtered = students.filter((s) => {
     if (!isAdmin && !s.is_active) return false;
     if (isAdmin && !showInactive && !s.is_active) return false;
@@ -133,7 +129,6 @@ export default function Home() {
     return true;
   });
 
-  // 반별 → 성별 그룹 구조
   const classGroups = useMemo<ClassGroup[]>(() => {
     const classKeys = Array.from(
       new Set(filtered.map((s) => `${s.grade}||${s.class_num}`)),
@@ -154,7 +149,6 @@ export default function Home() {
     });
   }, [filtered]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 출석 토글 + 비활동 → 활동 자동 승격
   async function toggle(student: Student) {
     if (!isAdmin) {
       toast.error("입력 권한이 없습니다", {
@@ -164,37 +158,29 @@ export default function Home() {
     }
     const current = attendance.get(student.id);
     const next = !current?.status;
-
-    // 비활동 학생을 출석 처리하면 자동 승격
     const willPromote = !student.is_active && next === true;
 
     setSaving((prev) => new Set(prev).add(student.id));
 
-    // Optimistic: 출석 상태 업데이트
     setAttendance((prev) => {
       const m = new Map(prev);
-      if (current) {
-        m.set(student.id, { ...current, status: next });
-      } else {
-        m.set(student.id, {
-          id: "tmp-" + student.id,
-          student_id: student.id,
-          attendance_date: date,
-          status: next,
-          created_at: new Date().toISOString(),
-        });
-      }
+      if (current) m.set(student.id, { ...current, status: next });
+      else m.set(student.id, {
+        id: "tmp-" + student.id,
+        student_id: student.id,
+        attendance_date: date,
+        status: next,
+        created_at: new Date().toISOString(),
+      });
       return m;
     });
 
-    // Optimistic: 자동 승격
     if (willPromote) {
       setStudents((prev) =>
         prev.map((s) => (s.id === student.id ? { ...s, is_active: true } : s)),
       );
     }
 
-    // 서버 반영: 출석 upsert
     const { error: attError, data: attData } = await supabase
       .from("attendance")
       .upsert(
@@ -205,36 +191,26 @@ export default function Home() {
       .single();
 
     if (attError) {
-      // 롤백
       setAttendance((prev) => {
         const m = new Map(prev);
         if (current) m.set(student.id, current);
         else m.delete(student.id);
         return m;
       });
-      if (willPromote) {
-        setStudents((prev) =>
-          prev.map((s) => (s.id === student.id ? { ...s, is_active: false } : s)),
-        );
-      }
+      if (willPromote) setStudents((prev) =>
+        prev.map((s) => (s.id === student.id ? { ...s, is_active: false } : s)),
+      );
       toast.error(`${student.name} 저장 실패: ${attError.message}`);
       setSaving((prev) => { const s = new Set(prev); s.delete(student.id); return s; });
       return;
     }
 
-    if (attData) {
-      setAttendance((prev) => new Map(prev).set(student.id, attData as Attendance));
-    }
+    if (attData) setAttendance((prev) => new Map(prev).set(student.id, attData as Attendance));
 
-    // 서버 반영: 자동 승격
     if (willPromote) {
       const { error: promoteError } = await supabase
-        .from("students")
-        .update({ is_active: true })
-        .eq("id", student.id);
-
+        .from("students").update({ is_active: true }).eq("id", student.id);
       if (promoteError) {
-        // 승격 실패는 출석 기록은 유지하고 is_active만 롤백
         setStudents((prev) =>
           prev.map((s) => (s.id === student.id ? { ...s, is_active: false } : s)),
         );
@@ -247,7 +223,6 @@ export default function Home() {
     setSaving((prev) => { const s = new Set(prev); s.delete(student.id); return s; });
   }
 
-  // 메모 저장
   async function saveNote(studentId: string, text: string) {
     const trimmed = text.trim().slice(0, 500);
     const current = notes.get(studentId);
@@ -299,7 +274,6 @@ export default function Home() {
     setSaving((p) => { const s = new Set(p); s.delete("note:" + studentId); return s; });
   }
 
-  // 비활동 학생 수 (관리자용 토글 라벨)
   const inactiveCount = students.filter(
     (s) =>
       !s.is_active &&
@@ -310,7 +284,6 @@ export default function Home() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto px-6 py-10">
-        {/* Masthead */}
         <header className="mb-8">
           <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground">
             Issue · {date}
@@ -320,7 +293,7 @@ export default function Home() {
           </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-xl">
             {isAdmin
-              ? "학생 카드를 누르면 도장이 찍힙니다. 변경은 즉시 반영되며 네트워크 실패 시 자동 복원됩니다."
+              ? "카드 배경을 누르면 출석 토글, 이름을 누르면 이력 패널이 열립니다."
               : "조회 전용 모드입니다. 출석 입력은 관리자 권한이 필요합니다."}
           </p>
           {!isAdmin && (
@@ -334,9 +307,7 @@ export default function Home() {
         {/* Controls */}
         <div className="bg-white/60 backdrop-blur-sm border border-foreground/10 px-5 py-4 mb-8 grid sm:grid-cols-[auto_1fr_1fr] gap-4 items-end">
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-              날짜
-            </label>
+            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">날짜</label>
             <div className="flex items-center gap-1">
               <Button size="icon" variant="ghost" onClick={() => setDate(shiftDate(date, -7))} aria-label="이전 주">
                 <ChevronLeft className="size-4" />
@@ -347,7 +318,6 @@ export default function Home() {
               </Button>
             </div>
           </div>
-
           <div>
             <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">학년</label>
             <select
@@ -359,7 +329,6 @@ export default function Home() {
               {grades.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
-
           <div>
             <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">반</label>
             <select
@@ -427,7 +396,6 @@ export default function Home() {
 
               return (
                 <section key={cg.classKey}>
-                  {/* 반 헤더 */}
                   {(() => {
                     const classAbsentCount = classStudentIds.filter(
                       (id) => !attendance.get(id)?.status,
@@ -451,7 +419,6 @@ export default function Home() {
                     );
                   })()}
 
-                  {/* 성별 그룹 */}
                   <div className="space-y-5">
                     {cg.genderGroups.map((gg) => {
                       const genderPresentCount = gg.students.filter(
@@ -460,7 +427,6 @@ export default function Home() {
 
                       return (
                         <div key={gg.gender}>
-                          {/* 성별 서브헤더 */}
                           {(() => {
                             const genderAbsentCount = gg.students.filter(
                               (s) => !attendance.get(s.id)?.status,
@@ -496,7 +462,6 @@ export default function Home() {
                             );
                           })()}
 
-                          {/* 학생 카드 그리드 */}
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
                             {gg.students.map((s) => {
                               const present = attendance.get(s.id)?.status ?? false;
@@ -515,44 +480,52 @@ export default function Home() {
                                     inactive
                                       ? "border-foreground/10 bg-foreground/3 opacity-60"
                                       : present
-                                      ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)] bg-white"
+                                      ? "border-[oklch(0.45_0.18_25)] bg-white"
                                       : "border-foreground/15 bg-white",
                                   )}
                                 >
-                                  {/* 비활동 배지 */}
                                   {inactive && (
                                     <div className="absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 bg-foreground/10 text-muted-foreground border border-foreground/15">
                                       비활동
                                     </div>
                                   )}
 
-                                  {/* 카드 토글 영역 */}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggle(s)}
-                                    disabled={isSaving || !isAdmin}
+                                  {/* 카드 영역: 이름 클릭 → 이력 패널, 나머지 → 출석 토글 */}
+                                  <div
+                                    onClick={(e) => {
+                                      if ((e.target as HTMLElement).closest("[data-memo-zone]")) return;
+                                      toggle(s);
+                                    }}
+                                    role={isAdmin ? "button" : undefined}
+                                    tabIndex={isAdmin ? 0 : undefined}
+                                    onKeyDown={(e) => {
+                                      if (isAdmin && (e.key === "Enter" || e.key === " ")) toggle(s);
+                                    }}
                                     className={cn(
-                                      "w-full text-left px-3 py-2.5",
+                                      "px-3 py-2.5",
                                       inactive ? "pt-5" : "",
-                                      isAdmin
-                                        ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
-                                        : "cursor-default",
+                                      isAdmin ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer" : "cursor-default",
                                     )}
                                   >
-                                    <div className={cn(
-                                      "font-display text-base leading-tight mt-0.5",
-                                      inactive ? "text-foreground/50" : "",
-                                    )}>
+                                    {/* 이름: 클릭 시 이력 패널 (출석 토글 이벤트 전파 차단) */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setHistoryStudent(s);
+                                      }}
+                                      className={cn(
+                                        "font-display text-base leading-tight mt-0.5 text-left hover:underline underline-offset-2",
+                                        inactive ? "text-foreground/50" : "",
+                                      )}
+                                    >
                                       {s.name}
-                                    </div>
-                                  </button>
+                                    </button>
+                                  </div>
 
                                   {/* 출석 스탬프 */}
                                   {present && (
-                                    <div
-                                      className="absolute -top-2 -right-2 size-10 rounded-full border-2 border-[oklch(0.45_0.18_25)] text-[oklch(0.45_0.18_25)] flex items-center justify-center font-display italic text-[9px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm"
-                                      style={{ fontFeatureSettings: '"smcp"' }}
-                                    >
+                                    <div className="absolute -top-2 -right-2 size-10 rounded-full border-2 border-[oklch(0.45_0.18_25)] text-[oklch(0.45_0.18_25)] flex items-center justify-center font-display italic text-[9px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm">
                                       출석
                                     </div>
                                   )}
@@ -560,9 +533,9 @@ export default function Home() {
                                     <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
                                   )}
 
-                                  {/* 메모 영역 - 결석 + 활동 학생만 */}
+                                  {/* 메모 영역 */}
                                   {!present && !inactive && (
-                                    <div className="border-t border-foreground/10 px-2.5 py-1.5">
+                                    <div data-memo-zone className="border-t border-foreground/10 px-2.5 py-1.5">
                                       {noteOpen ? (
                                         <NoteEditor
                                           initial={note?.note ?? ""}
@@ -576,7 +549,7 @@ export default function Home() {
                                       ) : (
                                         <button
                                           type="button"
-                                          onClick={() => setOpenNoteFor(s.id)}
+                                          onClick={(e) => { e.stopPropagation(); setOpenNoteFor(s.id); }}
                                           className={cn(
                                             "w-full text-left text-xs flex items-start gap-1 hover:text-foreground transition-colors",
                                             hasNote ? "text-foreground/80" : "text-muted-foreground",
@@ -609,6 +582,16 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* 출석 이력 패널 */}
+      <StudentHistoryPanel
+        student={historyStudent}
+        onClose={() => setHistoryStudent(null)}
+        onStudentUpdate={(updated) => {
+          setStudents((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+          setHistoryStudent(updated);
+        }}
+      />
     </AppLayout>
   );
 }
@@ -641,13 +624,8 @@ function NoteEditor({
         rows={2}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            onSave(value);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(value); }
+          else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
         }}
         placeholder="결석 사유 (예: 가족 여행, 병결 등) · ⌘/Ctrl+Enter 저장"
         className="w-full text-xs px-2 py-1.5 border border-foreground/20 bg-white resize-none focus:outline-none focus:border-[oklch(0.32_0.05_250)]"
@@ -657,9 +635,7 @@ function NoteEditor({
           {value.length}/500 · 누구나 작성 가능
         </div>
         <div className="flex gap-1">
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={onCancel} disabled={saving}>
-            취소
-          </Button>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={onCancel} disabled={saving}>취소</Button>
           <Button
             size="sm"
             className="h-6 px-2 text-[10px] bg-[oklch(0.32_0.05_250)] hover:bg-[oklch(0.28_0.05_250)]"
