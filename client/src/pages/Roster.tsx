@@ -41,7 +41,7 @@ const STUDENT_FIELDS: Array<keyof Student> = [
 ];
 const STUDENT_LABELS: Record<string, string> = {
   grade: "학년", class_num: "반", name: "이름", gender: "성별",
-  phone: "연락처", birth_date: "생년월일", school: "학교", guide: "인도자", is_active: "활동",
+  phone: "연락처", birth_date: "생년월일", school: "학교", guide: "데려온 친구", is_active: "활동",
 };
 
 interface InactiveCandidate {
@@ -284,7 +284,7 @@ export default function Roster() {
                   setEditing(
                     tab === "students"
                       ? { kind: "student", data: { grade: "1학년", class_num: "1반", is_active: true } }
-                      : { kind: "teacher", data: { role: "인도자" } },
+                      : { kind: "teacher", data: { role: "교사" } },
                   )
                 }
                 className="bg-[oklch(0.32_0.05_250)] text-white hover:bg-[oklch(0.28_0.05_250)]"
@@ -308,7 +308,7 @@ export default function Roster() {
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t === "students" ? `학생 (${students.length})` : `인도자 (${teachers.length})`}
+                {t === "students" ? `학생 (${students.length})` : `교사 (${teachers.length})`}
               </button>
             ))}
           </div>
@@ -388,7 +388,7 @@ export default function Roster() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display italic text-xl">
-              {editing?.data.id ? "편집" : "추가"} · {editing?.kind === "student" ? "학생" : "인도자"}
+              {editing?.data.id ? "편집" : "추가"} · {editing?.kind === "student" ? "학생" : "교사"}
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
@@ -488,7 +488,7 @@ export default function Roster() {
                       </th>
                       <th className="px-4 py-3">이름</th>
                       <th className="px-4 py-3">학년 · 반</th>
-                      <th className="px-4 py-3">인도자</th>
+                      <th className="px-4 py-3">데려온 친구</th>
                       <th className="px-4 py-3">마지막 출석일</th>
                       <th className="px-4 py-3">연속 결석</th>
                     </tr>
@@ -640,7 +640,7 @@ function StudentTable({
             <th className="px-4 py-3">이름</th>
             <th className="px-4 py-3">성별</th>
             <th className="px-4 py-3">학교</th>
-            <th className="px-4 py-3">인도자</th>
+              <th className="px-4 py-3">데려온 친구</th>
             <th className="px-4 py-3">연락처</th>
             <th className="px-4 py-3">활동</th>
             {canWrite && <th className="px-4 py-3 w-24" />}

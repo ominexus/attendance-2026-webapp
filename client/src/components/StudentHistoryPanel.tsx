@@ -223,7 +223,7 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
                     </span>
                   )}
                   {student.guide && (
-                    <span className="text-xs text-muted-foreground">인도자: {student.guide}</span>
+                    <span className="text-xs text-muted-foreground">데려온 친구: {student.guide}</span>
                   )}
                   {/* 활동 상태 배지 + admin 토글 */}
                   {isAdmin ? (

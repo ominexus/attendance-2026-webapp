@@ -58,7 +58,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <div className="mb-10">
             <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground mb-3">
-              인도자 로그인
+              교사 로그인
             </div>
             <h2 className="font-display text-3xl italic">Sign in</h2>
             <p className="text-sm text-muted-foreground mt-2">
@@ -106,7 +106,7 @@ export default function Login() {
           </form>
 
           <div className="mt-8 text-[11px] text-muted-foreground leading-relaxed text-center">
-            <span>관리자 계정으로 로그인하면 출석 입력이 가능합니다.</span>
+            <span>교사 계정으로 로그인하면 출석 입력이 가능합니다.</span>
           </div>
         </div>
       </main>

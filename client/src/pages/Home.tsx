@@ -151,9 +151,9 @@ export default function Home() {
 
   async function toggle(student: Student) {
     if (!isAdmin) {
-      toast.error("입력 권한이 없습니다", {
-        description: user ? "관리자만 출석을 수정할 수 있습니다." : "로그인 후 관리자 권한이 필요합니다.",
-      });
+            toast.error("입력 권한이 없습니다", {
+              description: user ? "교사만 출석을 수정할 수 있습니다." : "로그인 후 교사 권한이 필요합니다.",
+            });
       return;
     }
     const current = attendance.get(student.id);
@@ -216,7 +216,7 @@ export default function Home() {
         );
         toast.warning(`${student.name} 출석 저장됨, 활동 승격 실패: ${promoteError.message}`);
       } else {
-        toast.success(`${student.name} 출석 처리 + 활동학생으로 승격`, { duration: 2500 });
+            toast.success(`${student.name} 출석 처리 + 활동학생으로 승격`, { duration: 2500 });
       }
     }
 
@@ -299,7 +299,7 @@ export default function Home() {
           {!isAdmin && (
             <div className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-wider px-3 py-1.5 bg-foreground/5 border border-foreground/15 text-muted-foreground">
               {user ? <Eye className="size-3" /> : <ShieldCheck className="size-3" />}
-              {user ? "Viewer·읽기 전용" : <>관리자이시라면 <Link href="/login"><a className="underline ml-1">로그인</a></Link></>}
+              {user ? "Viewer·읽기 전용" : <>교사이시라면 <Link href="/login"><a className="underline ml-1">로그인</a></Link></>}
             </div>
           )}
         </header>
