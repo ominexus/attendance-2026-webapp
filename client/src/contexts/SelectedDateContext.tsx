@@ -85,7 +85,7 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
   const [datesLoading, setDatesLoading] = useState(true);
   const [fetchTick, setFetchTick] = useState(0);
 
-  // attendance 테이블에서 distinct 날짜 목록 fetch
+  // attendance 테이블에서 distinct 날짜 목록 fetch (2026년 이상만)
   useEffect(() => {
     let cancelled = false;
     setDatesLoading(true);
@@ -93,6 +93,7 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("attendance")
         .select("attendance_date")
+        .gte("attendance_date", "2026-01-01")
         .order("attendance_date", { ascending: false });
       if (cancelled) return;
       if (!error && data) {
@@ -105,6 +106,11 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
         if (!fromUrl && unique.length > 0) {
           _setSelectedDate(unique[0]);
           writeDateToUrl(unique[0]);
+        } else if (!fromUrl) {
+          // 기록이 없으면 오늘 기준 최근 일요일
+          const defaultSunday = defaultDate();
+          _setSelectedDate(defaultSunday);
+          writeDateToUrl(defaultSunday);
         }
       }
       setDatesLoading(false);
@@ -154,4 +160,9 @@ export function useSelectedDate() {
   const ctx = useContext(SelectedDateContext);
   if (!ctx) throw new Error("useSelectedDate must be used within SelectedDateProvider");
   return ctx;
+}
+
+// 2026년 이상 필터 적용 헬퍼
+export function isInValidYear(dateStr: string): boolean {
+  return dateStr >= "2026-01-01";
 }
