@@ -1,5 +1,6 @@
-// DateSpinner - 출석 기록이 있는 날짜만 표시하는 스피너 컴포넌트
-// - availableDates: SelectedDateContext에서 가져온 날짜 목록 (내림차순)
+// DateSpinner - attendance_dates 테이블 기반 날짜 스피너 컴포넌트
+// - availableDates: SelectedDateContext (attendance_dates is_active=true, <= today, 내림차순)
+// - service_type이 '주일예배'가 아니거나 label이 있으면 배지 표시
 // - ◀ ▶ 버튼: 기록이 있는 이전/다음 날짜로 이동 (인덱스 기반)
 // - admin 전용: "새 날짜 입력" 보조 컨트롤 (input type=date)
 import { ChevronLeft, ChevronRight, CalendarPlus } from "lucide-react";
@@ -14,7 +15,7 @@ interface DateSpinnerProps {
 }
 
 export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinnerProps) {
-  const { selectedDate, setSelectedDate, availableDates, datesLoading } = useSelectedDate();
+  const { selectedDate, setSelectedDate, availableDates, dateEntries, datesLoading } = useSelectedDate();
   const { isAdmin } = useAuth();
   const [showNewDate, setShowNewDate] = useState(false);
 
@@ -31,7 +32,6 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
   function goNext() {
     if (hasNext) setSelectedDate(availableDates[idx - 1]);
   }
-
   function handleNewDate(val: string) {
     if (!val || !isValidDate(val)) return;
     const d = snapToSunday ? toSunday(val) : val;
@@ -41,6 +41,14 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
 
   // 표시할 날짜 (snapToSunday 모드면 일요일로 보정)
   const displayDate = snapToSunday ? toSunday(selectedDate) : selectedDate;
+
+  // 현재 날짜의 entry 정보
+  const currentEntry = dateEntries.get(displayDate);
+  const hasSpecialBadge = currentEntry && (
+    currentEntry.service_type !== "주일예배" || currentEntry.label
+  );
+  const badgeText = currentEntry?.label || currentEntry?.service_type || "";
+
   const label = availableDates.length === 0 && !datesLoading
     ? "출석 기록 없음"
     : formatDateLabel(displayDate);
@@ -58,7 +66,6 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
         >
           <ChevronLeft className="size-3.5" />
         </button>
-
         <select
           value={displayDate}
           onChange={(e) => setSelectedDate(e.target.value)}
@@ -68,17 +75,21 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
           {availableDates.length === 0 && !datesLoading && (
             <option value={displayDate}>{label}</option>
           )}
-          {availableDates.map((d) => (
-            <option key={d} value={d}>
-              {formatDateLabel(d)}
-            </option>
-          ))}
+          {availableDates.map((d) => {
+            const entry = dateEntries.get(d);
+            const isSpecial = entry && (entry.service_type !== "주일예배" || entry.label);
+            const suffix = isSpecial ? ` [${entry?.label || entry?.service_type}]` : "";
+            return (
+              <option key={d} value={d}>
+                {formatDateLabel(d)}{suffix}
+              </option>
+            );
+          })}
           {/* 선택된 날짜가 목록에 없으면 (새 날짜 입력 중) 임시 옵션 추가 */}
           {availableDates.length > 0 && !availableDates.includes(displayDate) && (
             <option value={displayDate}>{formatDateLabel(displayDate)} *</option>
           )}
         </select>
-
         <button
           type="button"
           onClick={goNext}
@@ -89,6 +100,13 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
           <ChevronRight className="size-3.5" />
         </button>
       </div>
+
+      {/* 특수 서비스 타입 배지 (주일예배가 아닌 경우) */}
+      {hasSpecialBadge && (
+        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 font-medium">
+          {badgeText}
+        </span>
+      )}
 
       {/* admin 전용: 새 날짜 입력 보조 컨트롤 */}
       {isAdmin && (

@@ -14,6 +14,7 @@ import {
   Users,
   Loader2,
   ShieldCheck,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,10 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "출석", Icon: Stamp },
   { path: "/stats", label: "통계", Icon: BarChart3 },
   { path: "/roster", label: "명단", Icon: Users },
+];
+
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  { path: "/weeks", label: "주간 관리", Icon: CalendarDays },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -73,6 +78,32 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+          {/* Admin 전용 메뉴 */}
+          {isAdmin && (
+            <>
+              <div className="pt-3 pb-1 px-3">
+                <div className="text-[9px] uppercase tracking-widest text-white/30">Admin</div>
+              </div>
+              {ADMIN_NAV_ITEMS.map(({ path, label, Icon }) => {
+                const active = location === path;
+                return (
+                  <Link key={path} href={path}>
+                    <a
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 text-sm tracking-wider transition-colors border-l-2",
+                        active
+                          ? "border-current bg-white/5"
+                          : "border-transparent text-white/60 hover:text-white hover:bg-white/5",
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      <span className="uppercase tracking-wider text-xs">{label}</span>
+                    </a>
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </nav>
 
         <div className="border-t border-white/10 pt-4 space-y-2">

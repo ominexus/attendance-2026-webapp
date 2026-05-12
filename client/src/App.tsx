@@ -13,6 +13,7 @@ import Roster from "./pages/Roster";
 import Signup from "./pages/Signup";
 import SetPassword from "./pages/SetPassword";
 import PassCode from "./pages/PassCode";
+import Weeks from "./pages/Weeks";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -27,6 +28,7 @@ function Router() {
         <Route path={"/set-password"} component={SetPassword} />
         <Route path={"/stats"} component={Stats} />
         <Route path={"/roster"} component={Roster} />
+        <Route path={"/weeks"} component={Weeks} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>
