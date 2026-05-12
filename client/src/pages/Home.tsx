@@ -137,7 +137,8 @@ export default function Home() {
       (classFilter === "ALL" || s.class_num === classFilter),
   );
 
-  const presentCount = filtered.filter((s) => attendance.get(s.id)?.status).length;
+  // presentCount는 컨트롤 바에서 제거됨 (행동 지표로 전환)
+  // 반/성별 헤더에서 직접 집계
 
   // 반별 → 성별 그룹 구조 생성
   const classGroups = useMemo<ClassGroup[]>(() => {
@@ -330,7 +331,7 @@ export default function Home() {
         </header>
 
         {/* Controls */}
-        <div className="bg-white/60 backdrop-blur-sm border border-foreground/10 px-5 py-4 mb-8 grid sm:grid-cols-[auto_1fr_1fr_auto] gap-4 items-end">
+        <div className="bg-white/60 backdrop-blur-sm border border-foreground/10 px-5 py-4 mb-8 grid sm:grid-cols-[auto_1fr_1fr] gap-4 items-end">
           <div>
             <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
               날짜
@@ -400,14 +401,7 @@ export default function Home() {
             </select>
           </div>
 
-          <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              출석 / 전체
-            </div>
-            <div className="font-display italic text-2xl tabular-nums">
-              {presentCount} <span className="text-foreground/30">/ {filtered.length}</span>
-            </div>
-          </div>
+
         </div>
 
         {/* Student Cards - 반별/남여 그룹핑 */}
@@ -431,15 +425,29 @@ export default function Home() {
 
               return (
                 <section key={cg.classKey}>
-                  {/* 반 헤더 */}
-                  <div className="flex items-baseline gap-3 mb-4 border-b-2 border-[oklch(0.32_0.05_250)] pb-2">
-                    <h2 className="font-display text-2xl italic text-[oklch(0.32_0.05_250)]">
-                      {cg.grade} {cg.classNum}
-                    </h2>
-                    <span className="text-sm text-muted-foreground tabular-nums">
-                      출석 {classPresentCount} / {classStudentIds.length}명
-                    </span>
-                  </div>
+                  {/* 반 헤더 - 행동 지표: 출석·결석·메모 */}
+                  {(() => {
+                    const classAbsentCount = classStudentIds.length - classPresentCount;
+                    const classMemoCount = classStudentIds.filter(
+                      (id) => notes.get(id)?.note,
+                    ).length;
+                    return (
+                      <div className="flex items-baseline gap-3 mb-4 border-b-2 border-[oklch(0.32_0.05_250)] pb-2">
+                        <h2 className="font-display text-2xl italic text-[oklch(0.32_0.05_250)]">
+                          {cg.grade} {cg.classNum}
+                        </h2>
+                        <span className="text-sm text-muted-foreground tabular-nums">
+                          출석 {classPresentCount}
+                          {classAbsentCount > 0 && (
+                            <span className="text-[oklch(0.55_0.15_25)] ml-2">결석 {classAbsentCount}</span>
+                          )}
+                          {classMemoCount > 0 && (
+                            <span className="text-muted-foreground/70 ml-2">· 메모 {classMemoCount}</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* 성별 그룹 */}
                   <div className="space-y-5">
@@ -450,25 +458,39 @@ export default function Home() {
 
                       return (
                         <div key={gg.gender}>
-                          {/* 성별 서브헤더 */}
-                          <div className="flex items-center gap-2 mb-2.5">
-                            <span
-                              className={cn(
-                                "inline-flex items-center px-2 py-0.5 text-[10px] uppercase tracking-wider font-medium border",
-                                gg.gender === "남"
-                                  ? "bg-[oklch(0.93_0.04_250)] border-[oklch(0.75_0.08_250)] text-[oklch(0.32_0.05_250)]"
-                                  : gg.gender === "여"
-                                  ? "bg-[oklch(0.95_0.04_10)] border-[oklch(0.78_0.08_10)] text-[oklch(0.42_0.1_10)]"
-                                  : "bg-foreground/5 border-foreground/20 text-muted-foreground",
-                              )}
-                            >
-                              {gg.gender}
-                            </span>
-                            <span className="text-xs text-muted-foreground tabular-nums">
-                              {genderPresentCount} / {gg.students.length}
-                            </span>
-                            <div className="flex-1 h-px bg-foreground/10" />
-                          </div>
+                          {/* 성별 서브헤더 - 행동 지표: 출석·결석·메모 */}
+                          {(() => {
+                            const genderAbsentCount = gg.students.length - genderPresentCount;
+                            const genderMemoCount = gg.students.filter(
+                              (s) => notes.get(s.id)?.note,
+                            ).length;
+                            return (
+                              <div className="flex items-center gap-2 mb-2.5">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center px-2 py-0.5 text-[10px] uppercase tracking-wider font-medium border",
+                                    gg.gender === "남"
+                                      ? "bg-[oklch(0.93_0.04_250)] border-[oklch(0.75_0.08_250)] text-[oklch(0.32_0.05_250)]"
+                                      : gg.gender === "여"
+                                      ? "bg-[oklch(0.95_0.04_10)] border-[oklch(0.78_0.08_10)] text-[oklch(0.42_0.1_10)]"
+                                      : "bg-foreground/5 border-foreground/20 text-muted-foreground",
+                                  )}
+                                >
+                                  {gg.gender}
+                                </span>
+                                <span className="text-xs text-muted-foreground tabular-nums">
+                                  출석 {genderPresentCount}
+                                  {genderAbsentCount > 0 && (
+                                    <span className="text-[oklch(0.55_0.15_25)] ml-1.5">결석 {genderAbsentCount}</span>
+                                  )}
+                                  {genderMemoCount > 0 && (
+                                    <span className="text-muted-foreground/60 ml-1.5">· 메모 {genderMemoCount}</span>
+                                  )}
+                                </span>
+                                <div className="flex-1 h-px bg-foreground/10" />
+                              </div>
+                            );
+                          })()}
 
                           {/* 학생 카드 그리드 */}
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
