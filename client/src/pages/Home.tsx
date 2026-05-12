@@ -12,8 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSelectedDate, toSunday } from "@/contexts/SelectedDateContext";
 import { DateSpinner } from "@/components/DateSpinner";
-import { Loader2, Eye, ShieldCheck, MessageSquare, Check } from "lucide-react";
-import { Link } from "wouter";
+import { Loader2, Eye, MessageSquare, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
@@ -143,7 +142,7 @@ export default function Home() {
   async function toggle(student: Student) {
     if (!isAdmin) {
             toast.error("입력 권한이 없습니다", {
-              description: user ? "교사만 출석을 수정할 수 있습니다." : "로그인 후 교사 권한이 필요합니다.",
+              description: "관리자 권한이 필요합니다.",
             });
       return;
     }
@@ -292,8 +291,8 @@ export default function Home() {
           </p>
           {!isAdmin && (
             <div className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-wider px-3 py-1.5 bg-foreground/5 border border-foreground/15 text-muted-foreground">
-              {user ? <Eye className="size-3" /> : <ShieldCheck className="size-3" />}
-              {user ? "Viewer·읽기 전용" : <>교사이시라면 <Link href="/login"><a className="underline ml-1">로그인</a></Link></>}
+              <Eye className="size-3" />
+              조회 전용 모드
             </div>
           )}
         </header>

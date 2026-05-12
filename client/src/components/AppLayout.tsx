@@ -8,7 +8,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import {
   LogOut,
-  LogIn,
   Stamp,
   BarChart3,
   Users,
@@ -126,26 +125,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 Sign Out
               </Button>
             </>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                onClick={() => setLocation("/access")}
-                className="w-full justify-start gap-2 text-xs uppercase tracking-wider bg-white/10 hover:bg-white/20"
-              >
-                <LogIn className="size-3.5" />
-                {user ? "Sign Out" : "Sign In (Admin)"}
-              </Button>
-              {user && (
-                <button
-                  onClick={signOut}
-                  className="w-full text-left text-[10px] uppercase tracking-wider opacity-40 hover:opacity-70 px-2 py-1"
-                >
-                  로그아웃
-                </button>
-              )}
-            </>
-          )}
+          ) : null}
         </div>
       </aside>
 
@@ -166,21 +146,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </a>
             </Link>
           ))}
-          {user ? (
+          {user && (
             <button
               onClick={signOut}
               className="ml-1 px-2 py-1.5 text-[10px] opacity-70"
               title="Sign out"
             >
               <LogOut className="size-3" />
-            </button>
-          ) : (
-            <button
-              onClick={() => setLocation("/access")}
-              className="ml-1 px-2 py-1.5 text-[10px]"
-              title="Sign in"
-            >
-              <LogIn className="size-3" />
             </button>
           )}
         </div>
