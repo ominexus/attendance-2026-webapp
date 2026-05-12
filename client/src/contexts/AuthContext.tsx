@@ -1,5 +1,9 @@
 // 마일스톤 4: profile/role 로드, signUp, updatePassword 추가
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+// 버그 수정 (Milestone 4-11): 새로고침 시 loading 무한 스피너
+//   - getSession + onAuthStateChange 이중 초기화 경쟁 조건 제거
+//   - onAuthStateChange INITIAL_SESSION 이벤트로 단일 초기화 경로 통일
+//   - loadProfile에 try/finally 적용으로 setLoading(false) 보장
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
@@ -35,40 +39,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  // 초기화 완료 여부 추적 (INITIAL_SESSION 이벤트가 한 번만 loading=false 처리)
+  const initializedRef = useRef(false);
 
   const loadProfile = useCallback(async (userId: string | null) => {
     if (!userId) {
       setProfile(null);
       return;
     }
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) {
-      console.warn("profile load error", error.message);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+      if (error) {
+        console.warn("profile load error", error.message);
+        setProfile(null);
+      } else {
+        setProfile(data as Profile | null);
+      }
+    } catch (err) {
+      console.warn("profile load exception", err);
       setProfile(null);
-    } else {
-      setProfile(data as Profile | null);
     }
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      await loadProfile(data.session?.user.id ?? null);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      setSession(newSession);
-      await loadProfile(newSession?.user.id ?? null);
-    });
+    // onAuthStateChange 단일 경로로 초기화
+    // - INITIAL_SESSION: 새로고침/첫 마운트 시 발화 → loading=false 처리
+    // - SIGNED_IN / TOKEN_REFRESHED: 로그인 후 발화
+    // - SIGNED_OUT: 로그아웃 후 발화
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, newSession) => {
+        setSession(newSession);
+
+        if (newSession?.user.id) {
+          await loadProfile(newSession.user.id);
+        } else {
+          setProfile(null);
+        }
+
+        // 최초 이벤트(INITIAL_SESSION)에서만 loading 해제
+        // 이후 이벤트(SIGNED_IN 등)에서는 이미 false이므로 중복 set 무해
+        if (!initializedRef.current) {
+          initializedRef.current = true;
+          setLoading(false);
+        }
+      }
+    );
+
+    // Supabase SDK가 INITIAL_SESSION을 발화하지 않는 엣지 케이스 대비
+    // (예: 네트워크 오류, 토큰 만료 즉시 감지) — 3초 타임아웃 폴백
+    const fallbackTimer = setTimeout(() => {
+      if (!initializedRef.current) {
+        initializedRef.current = true;
+        setLoading(false);
+      }
+    }, 3000);
+
     return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
+      subscription.unsubscribe();
+      clearTimeout(fallbackTimer);
     };
   }, [loadProfile]);
 
