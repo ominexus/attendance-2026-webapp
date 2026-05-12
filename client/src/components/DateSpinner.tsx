@@ -1,11 +1,13 @@
 // DateSpinner - attendance_dates 테이블 기반 날짜 스피너 컴포넌트
-// - availableDates: SelectedDateContext (attendance_dates is_active=true, <= today, 내림차순)
+// - availableDates: SelectedDateContext (attendance_dates is_active=true, 내림차순)
+//   · 비admin: <= today 날짜만
+//   · admin: 미래 예정 날짜도 포함 (최대 today+60일), "예정" 배지 표시
 // - service_type이 '주일예배'가 아니거나 label이 있으면 배지 표시
 // - ◀ ▶ 버튼: 기록이 있는 이전/다음 날짜로 이동 (인덱스 기반)
-// - admin 전용: "새 날짜 입력" 보조 컨트롤 (input type=date)
+// - admin 전용: "새 날짜 입력" 보조 컨트롤 (input type=date, 목록에 없는 날짜용)
 import { ChevronLeft, ChevronRight, CalendarPlus } from "lucide-react";
 import { useState } from "react";
-import { useSelectedDate, formatDateLabel, toSunday, isValidDate } from "@/contexts/SelectedDateContext";
+import { useSelectedDate, formatDateLabel, toSunday, isValidDate, todayLocal } from "@/contexts/SelectedDateContext";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface DateSpinnerProps {
@@ -18,6 +20,8 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
   const { selectedDate, setSelectedDate, availableDates, dateEntries, datesLoading } = useSelectedDate();
   const { isAdmin } = useAuth();
   const [showNewDate, setShowNewDate] = useState(false);
+
+  const today = todayLocal();
 
   // 현재 선택된 날짜의 인덱스 (내림차순 배열에서 0이 최신)
   const idx = availableDates.indexOf(selectedDate);
@@ -44,6 +48,7 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
 
   // 현재 날짜의 entry 정보
   const currentEntry = dateEntries.get(displayDate);
+  const isFutureSelected = displayDate > today;
   const hasSpecialBadge = currentEntry && (
     currentEntry.service_type !== "주일예배" || currentEntry.label
   );
@@ -56,7 +61,7 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
   return (
     <div className={`flex items-center gap-1 flex-wrap ${className}`}>
       {/* 스피너 컨트롤 */}
-      <div className="flex items-center border border-foreground/20 bg-white">
+      <div className={`flex items-center border bg-white ${isFutureSelected ? "border-amber-300" : "border-foreground/20"}`}>
         <button
           type="button"
           onClick={goPrev}
@@ -77,8 +82,11 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
           )}
           {availableDates.map((d) => {
             const entry = dateEntries.get(d);
+            const isFuture = d > today;
             const isSpecial = entry && (entry.service_type !== "주일예배" || entry.label);
-            const suffix = isSpecial ? ` [${entry?.label || entry?.service_type}]` : "";
+            let suffix = "";
+            if (isFuture) suffix += " [예정]";
+            else if (isSpecial) suffix += ` [${entry?.label || entry?.service_type}]`;
             return (
               <option key={d} value={d}>
                 {formatDateLabel(d)}{suffix}
@@ -101,8 +109,15 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
         </button>
       </div>
 
-      {/* 특수 서비스 타입 배지 (주일예배가 아닌 경우) */}
-      {hasSpecialBadge && (
+      {/* 미래 날짜 선택 시 "예정" 배지 */}
+      {isFutureSelected && (
+        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 font-medium">
+          예정
+        </span>
+      )}
+
+      {/* 특수 서비스 타입 배지 (주일예배가 아닌 경우, 과거 날짜만) */}
+      {!isFutureSelected && hasSpecialBadge && (
         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 font-medium">
           {badgeText}
         </span>
@@ -119,7 +134,7 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
                 ? "border-[oklch(0.32_0.05_250)] text-[oklch(0.32_0.05_250)] bg-[oklch(0.95_0.02_250)]"
                 : "border-foreground/15 text-muted-foreground hover:border-foreground/30"
             }`}
-            title="새 날짜 출석 입력 시작"
+            title="새 날짜 출석 입력 시작 (목록에 없는 날짜)"
           >
             <CalendarPlus className="size-3" />
             새 날짜
