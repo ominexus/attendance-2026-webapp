@@ -25,6 +25,13 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 4-8 | **활동학생(is_active) 기능** (DB 마이그레이션, Home 필터링+자동 승격, Roster 토글, Stats 보정) | **완료** |
 | 4-9 | **이력 패널 + 비활동 후보 기능** (StudentHistoryPanel, Home 카드 이름 클릭, Roster 행 클릭, 비활동 후보 모달) | **완료** |
 | 4-10 | 알림, 반별 권한 분리 | 예정 |
+| 4-11 | 새로고침 무한 로딩 스피너 버그 수정 (AuthContext onAuthStateChange 단일 경로 정리) | 완료 |
+| 4-12 | 학생 인라인 편집 + Stats 기준일 컨트롤 + 학년별 통계 | 완료 |
+| 4-13 | 전역 날짜 컨텍스트(SelectedDateContext) + URL ?date= 양방향 동기화 | 완료 |
+| 4-14 | DateSpinner 교체 (attendance 기록 기반 select 스피너) | 완료 |
+| 4-15 | DateSpinner 2026년 필터 + 기본값 자동 보정 | 완료 |
+| 4-16 | DateSpinner 기본값 자동 보정 (URL 날짜가 목록에 없으면 최신 날짜로 보정) | 완료 |
+| 4-17 | attendance_dates 테이블 + DateSpinner 소스 전환 + 주간 관리 페이지(/weeks) | 완료 |
 
 ---
 
