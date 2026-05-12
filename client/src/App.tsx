@@ -5,6 +5,7 @@ import { Route, Switch, Router as WouterRouter } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { SelectedDateProvider } from "./contexts/SelectedDateContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Stats from "./pages/Stats";
@@ -38,10 +39,12 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <AuthProvider>
+          <SelectedDateProvider>
           <TooltipProvider>
             <Toaster />
             <Router />
           </TooltipProvider>
+          </SelectedDateProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

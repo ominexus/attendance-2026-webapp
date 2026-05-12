@@ -11,20 +11,15 @@ import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSelectedDate, toSunday } from "@/contexts/SelectedDateContext";
 import { Loader2, ChevronLeft, ChevronRight, Eye, ShieldCheck, MessageSquare, Check } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
 
-function lastSunday(d: Date = new Date()): string {
-  const x = new Date(d);
-  x.setDate(x.getDate() - x.getDay());
-  return x.toISOString().slice(0, 10);
-}
-
 function shiftDate(yyyymmdd: string, days: number): string {
-  const d = new Date(yyyymmdd);
+  const d = new Date(yyyymmdd + "T00:00:00");
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
@@ -53,7 +48,10 @@ export default function Home() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map());
-  const [date, setDate] = useState<string>(lastSunday());
+  const { selectedDate, setSelectedDate } = useSelectedDate();
+  // Home은 일요일 단위 운영 - 선택 날짜를 일요일로 보정해서 사용
+  const date = toSunday(selectedDate);
+  const setDate = (d: string) => setSelectedDate(toSunday(d));
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
   const [showInactive, setShowInactive] = useState<boolean>(false);

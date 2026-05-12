@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
 import { Loader2, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { useSelectedDate } from "@/contexts/SelectedDateContext";
 import { toast } from "sonner";
 import {
   ResponsiveContainer,
@@ -53,8 +54,8 @@ export default function Stats() {
   const [notes, setNotes] = useState<AbsenceNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 기준일 상태 (기본: 오늘 기준 가장 최근 일요일)
-  const [refDate, setRefDate] = useState<string>(todayLastSunday);
+  // 기준일: SelectedDateContext와 동기화
+  const { selectedDate: refDate, setSelectedDate } = useSelectedDate();
 
   useEffect(() => {
     let cancelled = false;
@@ -87,13 +88,14 @@ export default function Stats() {
   function moveWeek(delta: number) {
     const d = new Date(refDate + "T00:00:00");
     d.setDate(d.getDate() + delta * 7);
-    setRefDate(d.toISOString().slice(0, 10));
+    setSelectedDate(d.toISOString().slice(0, 10));
   }
 
   // 기준일 변경 (date input → 가장 가까운 일요일로 snap)
   function handleDateInput(val: string) {
     if (!val) return;
-    setRefDate(lastSundayFrom(val));
+    const snapped = lastSundayFrom(val);
+    setSelectedDate(snapped);
   }
 
   // 메모 → 학생 조인 맵
@@ -300,7 +302,7 @@ export default function Stats() {
             {!isToday && (
               <button
                 type="button"
-                onClick={() => setRefDate(todayLastSunday())}
+                onClick={() => setSelectedDate(todayLastSunday())}
                 className="text-[10px] uppercase tracking-wider text-[oklch(0.32_0.05_250)] hover:underline"
               >
                 오늘로 돌아가기
