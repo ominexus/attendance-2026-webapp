@@ -1,9 +1,8 @@
 // Devotional Editorial 스타일: paper-tone 배경, ink-blue 액센트
 // 마일스톤 3 - 출석 입력 페이지
-// - 가장 최근 일요일을 기본 날짜로 설정
-// - 학년/반 필터, 학생 카드 형태의 도장(stamp) 토글
-// - Optimistic UI + Supabase upsert/delete
-// - 반별 → 남/여 그룹핑 표시 (마일스톤 4-6)
+// 마일스톤 4-6: 반별 → 남/여 그룹핑
+// 마일스톤 4-7: 행동 지표 (출석·결석·메모) 헤더
+// 마일스톤 4-8: is_active 활동학생 필터링 + 자동 승격
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
@@ -15,7 +14,6 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-// 가장 최근 일요일 (오늘 포함)
 function lastSunday(d: Date = new Date()): string {
   const x = new Date(d);
   x.setDate(x.getDate() - x.getDay());
@@ -28,7 +26,6 @@ function shiftDate(yyyymmdd: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// 성별 정규화: 다양한 입력값을 '남'/'여'/'미지정'으로 통일
 function normalizeGender(g: string | null): "남" | "여" | "미지정" {
   if (!g) return "미지정";
   const v = g.trim().toLowerCase();
@@ -37,13 +34,12 @@ function normalizeGender(g: string | null): "남" | "여" | "미지정" {
   return "미지정";
 }
 
-// 반별 → 성별 그룹 구조
 interface GenderGroup {
   gender: "남" | "여" | "미지정";
   students: Student[];
 }
 interface ClassGroup {
-  classKey: string; // grade + class_num 조합 (예: "1학년 1반")
+  classKey: string;
   grade: string;
   classNum: string;
   genderGroups: GenderGroup[];
@@ -53,15 +49,16 @@ export default function Home() {
   const { isAdmin, user, profile } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
-  const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map()); // key: student_id
+  const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map());
   const [date, setDate] = useState<string>(lastSunday());
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
+  // 관리자 전용: 비활동 학생 표시 여부 (기본 숨기기)
+  const [showInactive, setShowInactive] = useState<boolean>(false);
   const [fetching, setFetching] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [openNoteFor, setOpenNoteFor] = useState<string | null>(null);
 
-  // 학생 명단 로드 (1회)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -78,12 +75,9 @@ export default function Home() {
         setStudents((data as Student[]) ?? []);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // 선택된 날짜의 출석 기록 + 결석 사유 메모 로드
   useEffect(() => {
     let cancelled = false;
     setFetching(true);
@@ -109,12 +103,9 @@ export default function Home() {
       }
       setFetching(false);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [date]);
 
-  // 필터 옵션 추출
   const grades = useMemo(
     () => Array.from(new Set(students.map((s) => s.grade))).sort(),
     [students],
@@ -131,29 +122,27 @@ export default function Home() {
     [students, gradeFilter],
   );
 
-  const filtered = students.filter(
-    (s) =>
-      (gradeFilter === "ALL" || s.grade === gradeFilter) &&
-      (classFilter === "ALL" || s.class_num === classFilter),
-  );
+  // 표시할 학생 목록:
+  // - 비로그인/비관리자: is_active=true만
+  // - 관리자: showInactive=false면 is_active=true만, true면 전체
+  const filtered = students.filter((s) => {
+    if (!isAdmin && !s.is_active) return false;
+    if (isAdmin && !showInactive && !s.is_active) return false;
+    if (gradeFilter !== "ALL" && s.grade !== gradeFilter) return false;
+    if (classFilter !== "ALL" && s.class_num !== classFilter) return false;
+    return true;
+  });
 
-  // presentCount는 컨트롤 바에서 제거됨 (행동 지표로 전환)
-  // 반/성별 헤더에서 직접 집계
-
-  // 반별 → 성별 그룹 구조 생성
+  // 반별 → 성별 그룹 구조
   const classGroups = useMemo<ClassGroup[]>(() => {
-    // 반 목록 (정렬 순서 유지)
     const classKeys = Array.from(
       new Set(filtered.map((s) => `${s.grade}||${s.class_num}`)),
     ).sort();
-
     return classKeys.map((key) => {
       const [grade, classNum] = key.split("||");
       const classStudents = filtered.filter(
         (s) => s.grade === grade && s.class_num === classNum,
       );
-
-      // 성별 그룹: 남 → 여 → 미지정 순서
       const genderOrder: ("남" | "여" | "미지정")[] = ["남", "여", "미지정"];
       const genderGroups: GenderGroup[] = genderOrder
         .map((gender) => ({
@@ -161,17 +150,11 @@ export default function Home() {
           students: classStudents.filter((s) => normalizeGender(s.gender) === gender),
         }))
         .filter((g) => g.students.length > 0);
-
-      return {
-        classKey: key,
-        grade,
-        classNum: classNum,
-        genderGroups,
-      };
+      return { classKey: key, grade, classNum, genderGroups };
     });
-  }, [filtered, attendance]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 출석 토글 (Optimistic + Supabase)
+  // 출석 토글 + 비활동 → 활동 자동 승격
   async function toggle(student: Student) {
     if (!isAdmin) {
       toast.error("입력 권한이 없습니다", {
@@ -182,8 +165,12 @@ export default function Home() {
     const current = attendance.get(student.id);
     const next = !current?.status;
 
-    // Optimistic
+    // 비활동 학생을 출석 처리하면 자동 승격
+    const willPromote = !student.is_active && next === true;
+
     setSaving((prev) => new Set(prev).add(student.id));
+
+    // Optimistic: 출석 상태 업데이트
     setAttendance((prev) => {
       const m = new Map(prev);
       if (current) {
@@ -200,21 +187,24 @@ export default function Home() {
       return m;
     });
 
-    // 서버 반영
-    const { error, data } = await supabase
+    // Optimistic: 자동 승격
+    if (willPromote) {
+      setStudents((prev) =>
+        prev.map((s) => (s.id === student.id ? { ...s, is_active: true } : s)),
+      );
+    }
+
+    // 서버 반영: 출석 upsert
+    const { error: attError, data: attData } = await supabase
       .from("attendance")
       .upsert(
-        {
-          student_id: student.id,
-          attendance_date: date,
-          status: next,
-        },
+        { student_id: student.id, attendance_date: date, status: next },
         { onConflict: "student_id,attendance_date" },
       )
       .select()
       .single();
 
-    if (error) {
+    if (attError) {
       // 롤백
       setAttendance((prev) => {
         const m = new Map(prev);
@@ -222,42 +212,51 @@ export default function Home() {
         else m.delete(student.id);
         return m;
       });
-      toast.error(`${student.name} 저장 실패: ${error.message}`);
-    } else if (data) {
-      setAttendance((prev) => {
-        const m = new Map(prev);
-        m.set(student.id, data as Attendance);
-        return m;
-      });
-    }
-
-    setSaving((prev) => {
-      const s = new Set(prev);
-      s.delete(student.id);
-      return s;
-    });
-  }
-
-  // 메모 저장 (누구나 가능, Optimistic)
-  async function saveNote(studentId: string, text: string) {
-    const trimmed = text.trim().slice(0, 500);
-    const current = notes.get(studentId);
-
-    // 변경이 없으면 무시
-    if ((current?.note ?? "") === trimmed) return;
-
-    setSaving((prev) => new Set(prev).add("note:" + studentId));
-
-    if (trimmed === "") {
-      setSaving((p) => {
-        const s = new Set(p);
-        s.delete("note:" + studentId);
-        return s;
-      });
+      if (willPromote) {
+        setStudents((prev) =>
+          prev.map((s) => (s.id === student.id ? { ...s, is_active: false } : s)),
+        );
+      }
+      toast.error(`${student.name} 저장 실패: ${attError.message}`);
+      setSaving((prev) => { const s = new Set(prev); s.delete(student.id); return s; });
       return;
     }
 
-    // Optimistic
+    if (attData) {
+      setAttendance((prev) => new Map(prev).set(student.id, attData as Attendance));
+    }
+
+    // 서버 반영: 자동 승격
+    if (willPromote) {
+      const { error: promoteError } = await supabase
+        .from("students")
+        .update({ is_active: true })
+        .eq("id", student.id);
+
+      if (promoteError) {
+        // 승격 실패는 출석 기록은 유지하고 is_active만 롤백
+        setStudents((prev) =>
+          prev.map((s) => (s.id === student.id ? { ...s, is_active: false } : s)),
+        );
+        toast.warning(`${student.name} 출석 저장됨, 활동 승격 실패: ${promoteError.message}`);
+      } else {
+        toast.success(`${student.name} 출석 처리 + 활동학생으로 승격`, { duration: 2500 });
+      }
+    }
+
+    setSaving((prev) => { const s = new Set(prev); s.delete(student.id); return s; });
+  }
+
+  // 메모 저장
+  async function saveNote(studentId: string, text: string) {
+    const trimmed = text.trim().slice(0, 500);
+    const current = notes.get(studentId);
+    if ((current?.note ?? "") === trimmed) return;
+    setSaving((prev) => new Set(prev).add("note:" + studentId));
+    if (trimmed === "") {
+      setSaving((p) => { const s = new Set(p); s.delete("note:" + studentId); return s; });
+      return;
+    }
     const optimistic: AbsenceNote = current
       ? { ...current, note: trimmed, updated_at: new Date().toISOString() }
       : {
@@ -271,23 +270,21 @@ export default function Home() {
           updated_at: new Date().toISOString(),
         };
     setNotes((prev) => new Map(prev).set(studentId, optimistic));
-
-    const payload: Partial<AbsenceNote> = {
-      attend_date: date,
-      student_id: studentId,
-      note: trimmed,
-      author_name: profile?.display_name || user?.email || null,
-      author_id: user?.id ?? null,
-    };
-
     const { data, error } = await supabase
       .from("absence_notes")
-      .upsert(payload, { onConflict: "attend_date,student_id" })
+      .upsert(
+        {
+          attend_date: date,
+          student_id: studentId,
+          note: trimmed,
+          author_name: profile?.display_name || user?.email || null,
+          author_id: user?.id ?? null,
+        },
+        { onConflict: "attend_date,student_id" },
+      )
       .select()
       .single();
-
     if (error) {
-      // 롤백
       setNotes((prev) => {
         const m = new Map(prev);
         if (current) m.set(studentId, current);
@@ -299,12 +296,16 @@ export default function Home() {
       setNotes((prev) => new Map(prev).set(studentId, data as AbsenceNote));
       toast.success("메모를 저장했습니다", { duration: 1500 });
     }
-    setSaving((p) => {
-      const s = new Set(p);
-      s.delete("note:" + studentId);
-      return s;
-    });
+    setSaving((p) => { const s = new Set(p); s.delete("note:" + studentId); return s; });
   }
+
+  // 비활동 학생 수 (관리자용 토글 라벨)
+  const inactiveCount = students.filter(
+    (s) =>
+      !s.is_active &&
+      (gradeFilter === "ALL" || s.grade === gradeFilter) &&
+      (classFilter === "ALL" || s.class_num === classFilter),
+  ).length;
 
   return (
     <AppLayout>
@@ -337,74 +338,78 @@ export default function Home() {
               날짜
             </label>
             <div className="flex items-center gap-1">
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setDate(shiftDate(date, -7))}
-                aria-label="이전 주"
-              >
+              <Button size="icon" variant="ghost" onClick={() => setDate(shiftDate(date, -7))} aria-label="이전 주">
                 <ChevronLeft className="size-4" />
               </Button>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-40"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setDate(shiftDate(date, 7))}
-                aria-label="다음 주"
-              >
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-40" />
+              <Button size="icon" variant="ghost" onClick={() => setDate(shiftDate(date, 7))} aria-label="다음 주">
                 <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-              학년
-            </label>
+            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">학년</label>
             <select
               value={gradeFilter}
-              onChange={(e) => {
-                setGradeFilter(e.target.value);
-                setClassFilter("ALL");
-              }}
+              onChange={(e) => { setGradeFilter(e.target.value); setClassFilter("ALL"); }}
               className="w-full bg-background border border-input rounded-md h-9 px-3 text-sm"
             >
               <option value="ALL">전체</option>
-              {grades.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
+              {grades.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
 
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-              반
-            </label>
+            <label className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">반</label>
             <select
               value={classFilter}
               onChange={(e) => setClassFilter(e.target.value)}
               className="w-full bg-background border border-input rounded-md h-9 px-3 text-sm"
             >
               <option value="ALL">전체</option>
-              {classes.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+              {classes.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-
-
         </div>
 
-        {/* Student Cards - 반별/남여 그룹핑 */}
+        {/* 관리자 전용: 비활동 학생 토글 */}
+        {isAdmin && inactiveCount > 0 && (
+          <div className="flex items-center gap-3 mb-6">
+            <button
+              type="button"
+              onClick={() => setShowInactive((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-2 text-xs px-3 py-1.5 border transition-colors",
+                showInactive
+                  ? "border-foreground/30 bg-foreground/8 text-foreground"
+                  : "border-foreground/15 bg-white/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block w-7 h-4 rounded-full transition-colors relative",
+                  showInactive ? "bg-[oklch(0.32_0.05_250)]" : "bg-foreground/20",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 size-3 rounded-full bg-white transition-transform shadow-sm",
+                    showInactive ? "translate-x-3.5" : "translate-x-0.5",
+                  )}
+                />
+              </span>
+              비활동 학생 표시 ({inactiveCount}명)
+            </button>
+            {showInactive && (
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                · 비활동 카드를 출석 처리하면 자동으로 활동학생으로 승격됩니다
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Student Cards */}
         {fetching ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
             <Loader2 className="animate-spin size-4" />
@@ -417,20 +422,17 @@ export default function Home() {
         ) : (
           <div className="space-y-10">
             {classGroups.map((cg) => {
-              // 반 전체 출석 카운트
               const classStudentIds = cg.genderGroups.flatMap((g) => g.students.map((s) => s.id));
-              const classPresentCount = classStudentIds.filter(
-                (id) => attendance.get(id)?.status,
-              ).length;
+              const classPresentCount = classStudentIds.filter((id) => attendance.get(id)?.status).length;
 
               return (
                 <section key={cg.classKey}>
-                  {/* 반 헤더 - 행동 지표: 출석·결석·메모 */}
+                  {/* 반 헤더 */}
                   {(() => {
-                    const classAbsentCount = classStudentIds.length - classPresentCount;
-                    const classMemoCount = classStudentIds.filter(
-                      (id) => notes.get(id)?.note,
+                    const classAbsentCount = classStudentIds.filter(
+                      (id) => !attendance.get(id)?.status,
                     ).length;
+                    const classMemoCount = classStudentIds.filter((id) => notes.get(id)?.note).length;
                     return (
                       <div className="flex items-baseline gap-3 mb-4 border-b-2 border-[oklch(0.32_0.05_250)] pb-2">
                         <h2 className="font-display text-2xl italic text-[oklch(0.32_0.05_250)]">
@@ -458,9 +460,11 @@ export default function Home() {
 
                       return (
                         <div key={gg.gender}>
-                          {/* 성별 서브헤더 - 행동 지표: 출석·결석·메모 */}
+                          {/* 성별 서브헤더 */}
                           {(() => {
-                            const genderAbsentCount = gg.students.length - genderPresentCount;
+                            const genderAbsentCount = gg.students.filter(
+                              (s) => !attendance.get(s.id)?.status,
+                            ).length;
                             const genderMemoCount = gg.students.filter(
                               (s) => notes.get(s.id)?.note,
                             ).length;
@@ -501,34 +505,49 @@ export default function Home() {
                               const noteSaving = saving.has("note:" + s.id);
                               const noteOpen = openNoteFor === s.id;
                               const hasNote = !!note?.note;
+                              const inactive = !s.is_active;
+
                               return (
                                 <div
                                   key={s.id}
                                   className={cn(
-                                    "relative bg-white border transition-all duration-150",
-                                    present
-                                      ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)]"
-                                      : "border-foreground/15",
+                                    "relative border transition-all duration-150",
+                                    inactive
+                                      ? "border-foreground/10 bg-foreground/3 opacity-60"
+                                      : present
+                                      ? "border-[oklch(0.45_0.18_25)] bg-[oklch(0.99_0.005_85)] bg-white"
+                                      : "border-foreground/15 bg-white",
                                   )}
                                 >
-                                  {/* 상단 토글 영역 (admin만 클릭) */}
+                                  {/* 비활동 배지 */}
+                                  {inactive && (
+                                    <div className="absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 bg-foreground/10 text-muted-foreground border border-foreground/15">
+                                      비활동
+                                    </div>
+                                  )}
+
+                                  {/* 카드 토글 영역 */}
                                   <button
                                     type="button"
                                     onClick={() => toggle(s)}
                                     disabled={isSaving || !isAdmin}
                                     className={cn(
                                       "w-full text-left px-3 py-2.5",
+                                      inactive ? "pt-5" : "",
                                       isAdmin
                                         ? "hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
                                         : "cursor-default",
                                     )}
                                   >
-                                    <div className="font-display text-base leading-tight mt-0.5">
+                                    <div className={cn(
+                                      "font-display text-base leading-tight mt-0.5",
+                                      inactive ? "text-foreground/50" : "",
+                                    )}>
                                       {s.name}
                                     </div>
                                   </button>
 
-                                  {/* Stamp */}
+                                  {/* 출석 스탬프 */}
                                   {present && (
                                     <div
                                       className="absolute -top-2 -right-2 size-10 rounded-full border-2 border-[oklch(0.45_0.18_25)] text-[oklch(0.45_0.18_25)] flex items-center justify-center font-display italic text-[9px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm"
@@ -541,8 +560,8 @@ export default function Home() {
                                     <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
                                   )}
 
-                                  {/* 메모 영역 - 결석시에만 노출 */}
-                                  {!present && (
+                                  {/* 메모 영역 - 결석 + 활동 학생만 */}
+                                  {!present && !inactive && (
                                     <div className="border-t border-foreground/10 px-2.5 py-1.5">
                                       {noteOpen ? (
                                         <NoteEditor
@@ -594,7 +613,6 @@ export default function Home() {
   );
 }
 
-// 결석 사유 메모 인라인 에디터
 function NoteEditor({
   initial,
   saving,
@@ -639,13 +657,7 @@ function NoteEditor({
           {value.length}/500 · 누구나 작성 가능
         </div>
         <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-[10px]"
-            onClick={onCancel}
-            disabled={saving}
-          >
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={onCancel} disabled={saving}>
             취소
           </Button>
           <Button

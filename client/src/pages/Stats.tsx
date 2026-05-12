@@ -1,6 +1,7 @@
 // Devotional Editorial 스타일: 차트는 잉크 블루 단색 + 우드컷 느낌의 dotted grid
 // 마일스톤 3 - 통계 대시보드
 // 마일스톤 4-7: KPI를 출석률 제거 → 행동·활동 중심 지표로 전환
+// 마일스톤 4-8: KPI·차트 모두 is_active=true 활동 학생 기준으로 보정
 // - 이번 주 출석 인원 / 결석 인원
 // - 최근 4주 평균 출석 인원
 // - 신규 출석자 수 (최근 4주 중 첫 출석)
@@ -52,7 +53,7 @@ export default function Stats() {
     setLoading(true);
     (async () => {
       const [sRes, aRes, nRes] = await Promise.all([
-        supabase.from("students").select("*"),
+        supabase.from("students").select("*").eq("is_active", true),
         // status=true인 기록만 (출석 처리된 것)
         supabase.from("attendance").select("*").eq("status", true),
         supabase
@@ -216,7 +217,7 @@ export default function Stats() {
           </div>
           <h1 className="font-display text-4xl italic mt-1">출석 통계</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            기준일: <span className="tabular-nums">{thisWeek}</span> (이번 주 일요일)
+            기준일: <span className="tabular-nums">{thisWeek}</span> (이번 주 일요일) · 활동 학생 기준
           </p>
         </header>
 

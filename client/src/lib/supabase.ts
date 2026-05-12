@@ -38,6 +38,7 @@ export interface Student {
   birth_date: string | null;
   school: string | null;
   guide: string | null;
+  is_active: boolean;
   created_at: string;
 }
 

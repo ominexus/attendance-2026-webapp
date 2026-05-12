@@ -1,7 +1,5 @@
 // Devotional Editorial 스타일 - 명단 관리
-// - 학생/인도자 탭 전환
-// - 인라인 편집 다이얼로그 (생성/수정/삭제)
-// - CSV/XLSX 일괄 업로드 (헤더 자동 매핑)
+// 마일스톤 4-8: is_active 활동 필터 + 행별 토글 스위치 + 다이얼로그 체크박스
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { supabase, type Student, type Teacher } from "@/lib/supabase";
@@ -9,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
-
 import {
   Dialog,
   DialogContent,
@@ -20,8 +17,10 @@ import {
 import { Loader2, Plus, Pencil, Trash2, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { cn } from "@/lib/utils";
 
 type Tab = "students" | "teachers";
+type ActiveFilter = "all" | "active" | "inactive";
 
 const STUDENT_FIELDS: Array<keyof Student> = [
   "grade",
@@ -32,6 +31,7 @@ const STUDENT_FIELDS: Array<keyof Student> = [
   "birth_date",
   "school",
   "guide",
+  "is_active",
 ];
 const STUDENT_LABELS: Record<string, string> = {
   grade: "학년",
@@ -42,6 +42,7 @@ const STUDENT_LABELS: Record<string, string> = {
   birth_date: "생년월일",
   school: "학교",
   guide: "인도자",
+  is_active: "활동",
 };
 
 export default function Roster() {
@@ -50,12 +51,14 @@ export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
   const [editing, setEditing] = useState<
     | { kind: "student"; data: Partial<Student> }
     | { kind: "teacher"; data: Partial<Teacher> }
     | null
   >(null);
   const [keyword, setKeyword] = useState("");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function reload() {
@@ -69,21 +72,23 @@ export default function Roster() {
     setLoading(false);
   }
 
-  useEffect(() => {
-    reload();
-  }, []);
+  useEffect(() => { reload(); }, []);
 
-  const filteredStudents = useMemo(
-    () =>
-      keyword
-        ? students.filter((s) =>
-            [s.name, s.grade, s.class_num, s.school, s.guide]
-              .filter(Boolean)
-              .some((v) => String(v).includes(keyword)),
-          )
-        : students,
-    [students, keyword],
-  );
+  // 활동 필터 적용
+  const filteredStudents = useMemo(() => {
+    let list = students;
+    if (activeFilter === "active") list = list.filter((s) => s.is_active);
+    else if (activeFilter === "inactive") list = list.filter((s) => !s.is_active);
+    if (keyword) {
+      list = list.filter((s) =>
+        [s.name, s.grade, s.class_num, s.school, s.guide]
+          .filter(Boolean)
+          .some((v) => String(v).includes(keyword)),
+      );
+    }
+    return list;
+  }, [students, activeFilter, keyword]);
+
   const filteredTeachers = useMemo(
     () =>
       keyword
@@ -92,17 +97,19 @@ export default function Roster() {
     [teachers, keyword],
   );
 
+  // 활동 카운트
+  const activeCount = students.filter((s) => s.is_active).length;
+  const inactiveCount = students.filter((s) => !s.is_active).length;
+
   async function save() {
     if (!editing) return;
     const { kind, data } = editing;
     const table = kind === "student" ? "students" : "teachers";
     const payload = { ...data };
     delete (payload as { created_at?: string }).created_at;
-
     const { error } = data.id
       ? await supabase.from(table).update(payload).eq("id", data.id)
       : await supabase.from(table).insert(payload);
-
     if (error) {
       toast.error("저장 실패: " + error.message);
     } else {
@@ -116,10 +123,24 @@ export default function Roster() {
     if (!confirm(`${label} 항목을 삭제하시겠습니까?`)) return;
     const { error } = await supabase.from(kind).delete().eq("id", id);
     if (error) toast.error("삭제 실패: " + error.message);
-    else {
-      toast.success("삭제되었습니다");
-      reload();
+    else { toast.success("삭제되었습니다"); reload(); }
+  }
+
+  // 행별 is_active 토글 (admin 전용)
+  async function toggleActive(s: Student) {
+    if (!isAdmin) return;
+    setTogglingId(s.id);
+    const next = !s.is_active;
+    // Optimistic
+    setStudents((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_active: next } : x)));
+    const { error } = await supabase.from("students").update({ is_active: next }).eq("id", s.id);
+    if (error) {
+      setStudents((prev) => prev.map((x) => (x.id === s.id ? { ...x, is_active: !next } : x)));
+      toast.error("변경 실패: " + error.message);
+    } else {
+      toast.success(`${s.name} → ${next ? "활동" : "비활동"} 처리`, { duration: 1500 });
     }
+    setTogglingId(null);
   }
 
   async function bulkUpload(file: File) {
@@ -128,11 +149,8 @@ export default function Roster() {
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null });
-      if (rows.length === 0) {
-        toast.error("빈 파일입니다");
-        return;
-      }
-      // 헤더 자동 매핑 (한글 → 영문 키)
+      if (rows.length === 0) { toast.error("빈 파일입니다"); return; }
+
       const reverseLabel: Record<string, string> = {};
       for (const [k, v] of Object.entries(STUDENT_LABELS)) reverseLabel[v] = k;
 
@@ -140,19 +158,25 @@ export default function Roster() {
         const obj: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(r)) {
           const key = reverseLabel[k] || k;
-          obj[key] = v === "" ? null : v;
+          // is_active: "활동"→true, "비활동"→false, true/false 그대로, null→true
+          if (key === "is_active") {
+            if (v === null || v === undefined || v === "") obj[key] = true;
+            else if (typeof v === "boolean") obj[key] = v;
+            else if (String(v).trim() === "활동" || String(v).trim() === "true") obj[key] = true;
+            else if (String(v).trim() === "비활동" || String(v).trim() === "false") obj[key] = false;
+            else obj[key] = true;
+          } else {
+            obj[key] = v === "" ? null : v;
+          }
         }
+        if (!("is_active" in obj)) obj["is_active"] = true;
         return obj;
       });
 
       const table = tab === "students" ? "students" : "teachers";
       const { error } = await supabase.from(table).insert(records);
-      if (error) {
-        toast.error("일괄 등록 실패: " + error.message);
-      } else {
-        toast.success(`${records.length}건 등록 완료`);
-        reload();
-      }
+      if (error) toast.error("일괄 등록 실패: " + error.message);
+      else { toast.success(`${records.length}건 등록 완료`); reload(); }
     } catch (e) {
       toast.error("파싱 오류: " + (e as Error).message);
     } finally {
@@ -184,21 +208,11 @@ export default function Roster() {
 
           {isAdmin && (
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={downloadTemplate}
-                className="bg-white"
-              >
+              <Button variant="outline" size="sm" onClick={downloadTemplate} className="bg-white">
                 <Download className="size-3.5" />
                 템플릿
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-white"
-              >
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="bg-white">
                 <Upload className="size-3.5" />
                 일괄 등록
               </Button>
@@ -214,7 +228,7 @@ export default function Roster() {
                 onClick={() =>
                   setEditing(
                     tab === "students"
-                      ? { kind: "student", data: { grade: "1학년", class_num: "1반" } }
+                      ? { kind: "student", data: { grade: "1학년", class_num: "1반", is_active: true } }
                       : { kind: "teacher", data: { role: "인도자" } },
                   )
                 }
@@ -252,6 +266,32 @@ export default function Roster() {
           />
         </div>
 
+        {/* 학생 탭 전용: 활동 필터 */}
+        {tab === "students" && (
+          <div className="flex items-center gap-2 mb-4">
+            {(
+              [
+                { key: "all", label: `전체 (${students.length})` },
+                { key: "active", label: `활동 (${activeCount})` },
+                { key: "inactive", label: `비활동 (${inactiveCount})` },
+              ] as { key: ActiveFilter; label: string }[]
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveFilter(key)}
+                className={cn(
+                  "text-xs px-3 py-1.5 border transition-colors",
+                  activeFilter === key
+                    ? "border-[oklch(0.32_0.05_250)] bg-[oklch(0.93_0.04_250)] text-[oklch(0.32_0.05_250)]"
+                    : "border-foreground/15 bg-white/60 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
             <Loader2 className="animate-spin size-4" />
@@ -261,8 +301,10 @@ export default function Roster() {
           <StudentTable
             rows={filteredStudents}
             canWrite={isAdmin}
+            togglingId={togglingId}
             onEdit={(s) => setEditing({ kind: "student", data: s })}
             onDelete={(s) => remove("students", s.id, s.name)}
+            onToggleActive={toggleActive}
           />
         ) : tab === "teachers" ? (
           <TeacherTable
@@ -285,30 +327,41 @@ export default function Roster() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             {editing?.kind === "student" &&
-              STUDENT_FIELDS.map((f) =>
-                f === "gender" ? (
-                  <GenderSelect
-                    key={f}
-                    value={(editing.data as Record<string, unknown>)["gender"] as string | null}
-                    onChange={(v: string) =>
-                      setEditing({ kind: "student", data: { ...editing.data, gender: v } })
-                    }
-                  />
-                ) : (
+              STUDENT_FIELDS.map((f) => {
+                if (f === "gender") {
+                  return (
+                    <GenderSelect
+                      key={f}
+                      value={(editing.data as Record<string, unknown>)["gender"] as string | null}
+                      onChange={(v: string) =>
+                        setEditing({ kind: "student", data: { ...editing.data, gender: v } })
+                      }
+                    />
+                  );
+                }
+                if (f === "is_active") {
+                  return (
+                    <ActiveCheckbox
+                      key={f}
+                      value={(editing.data as Record<string, unknown>)["is_active"] as boolean ?? true}
+                      onChange={(v: boolean) =>
+                        setEditing({ kind: "student", data: { ...editing.data, is_active: v } })
+                      }
+                    />
+                  );
+                }
+                return (
                   <Field
                     key={f}
                     label={STUDENT_LABELS[f as string] ?? f}
                     value={(editing.data as Record<string, unknown>)[f as string] as string | null}
                     onChange={(v) =>
-                      setEditing({
-                        kind: "student",
-                        data: { ...editing.data, [f]: v },
-                      })
+                      setEditing({ kind: "student", data: { ...editing.data, [f]: v } })
                     }
                     type={f === "birth_date" ? "date" : "text"}
                   />
-                ),
-              )}
+                );
+              })}
             {editing?.kind === "teacher" && (
               <>
                 <Field
@@ -329,9 +382,7 @@ export default function Roster() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditing(null)}>
-              취소
-            </Button>
+            <Button variant="ghost" onClick={() => setEditing(null)}>취소</Button>
             <Button
               onClick={save}
               className="bg-[oklch(0.32_0.05_250)] text-white hover:bg-[oklch(0.28_0.05_250)]"
@@ -342,6 +393,42 @@ export default function Roster() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+// ── 서브 컴포넌트 ──────────────────────────────────────────────────────────
+
+function ActiveCheckbox({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="block col-span-2">
+      <span className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+        활동 여부
+      </span>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className={cn(
+            "inline-block w-10 h-5 rounded-full transition-colors relative",
+            value ? "bg-[oklch(0.32_0.05_250)]" : "bg-foreground/20",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-4 rounded-full bg-white transition-transform shadow-sm",
+              value ? "translate-x-5" : "translate-x-0.5",
+            )}
+          />
+        </button>
+        <span className="text-sm">{value ? "활동" : "비활동"}</span>
+      </div>
+    </label>
   );
 }
 
@@ -394,13 +481,17 @@ function Field({
 function StudentTable({
   rows,
   canWrite,
+  togglingId,
   onEdit,
   onDelete,
+  onToggleActive,
 }: {
   rows: Student[];
   canWrite: boolean;
+  togglingId: string | null;
   onEdit: (s: Student) => void;
   onDelete: (s: Student) => void;
+  onToggleActive: (s: Student) => void;
 }) {
   return (
     <div className="bg-white border border-foreground/10 overflow-x-auto">
@@ -413,12 +504,21 @@ function StudentTable({
             <th className="px-4 py-3">학교</th>
             <th className="px-4 py-3">인도자</th>
             <th className="px-4 py-3">연락처</th>
+            <th className="px-4 py-3">활동</th>
             {canWrite && <th className="px-4 py-3 w-24" />}
           </tr>
         </thead>
         <tbody>
           {rows.map((s) => (
-            <tr key={s.id} className="border-t border-foreground/10 hover:bg-[oklch(0.97_0.012_85)]">
+            <tr
+              key={s.id}
+              className={cn(
+                "border-t border-foreground/10",
+                s.is_active
+                  ? "hover:bg-[oklch(0.97_0.012_85)]"
+                  : "bg-foreground/2 text-foreground/50 hover:bg-foreground/4",
+              )}
+            >
               <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
                 {s.grade} {s.class_num}
               </td>
@@ -427,15 +527,51 @@ function StudentTable({
               <td className="px-4 py-2.5 text-xs">{s.school}</td>
               <td className="px-4 py-2.5 text-xs">{s.guide}</td>
               <td className="px-4 py-2.5 text-xs tabular-nums">{s.phone}</td>
-              {canWrite && (
-              <td className="px-4 py-2.5 text-right">
-                <Button variant="ghost" size="icon" onClick={() => onEdit(s)}>
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => onDelete(s)}>
-                  <Trash2 className="size-3.5 text-destructive" />
-                </Button>
+              <td className="px-4 py-2.5">
+                {canWrite ? (
+                  <button
+                    type="button"
+                    onClick={() => onToggleActive(s)}
+                    disabled={togglingId === s.id}
+                    className={cn(
+                      "inline-block w-9 h-5 rounded-full transition-colors relative",
+                      s.is_active ? "bg-[oklch(0.32_0.05_250)]" : "bg-foreground/20",
+                    )}
+                    title={s.is_active ? "활동 → 비활동으로 변경" : "비활동 → 활동으로 변경"}
+                  >
+                    {togglingId === s.id ? (
+                      <Loader2 className="absolute inset-0 m-auto size-3 animate-spin text-white" />
+                    ) : (
+                      <span
+                        className={cn(
+                          "absolute top-0.5 size-4 rounded-full bg-white transition-transform shadow-sm",
+                          s.is_active ? "translate-x-4" : "translate-x-0.5",
+                        )}
+                      />
+                    )}
+                  </button>
+                ) : (
+                  <span
+                    className={cn(
+                      "text-[10px] uppercase tracking-wider px-1.5 py-0.5 border",
+                      s.is_active
+                        ? "border-[oklch(0.75_0.08_250)] text-[oklch(0.32_0.05_250)] bg-[oklch(0.93_0.04_250)]"
+                        : "border-foreground/20 text-muted-foreground bg-foreground/5",
+                    )}
+                  >
+                    {s.is_active ? "활동" : "비활동"}
+                  </span>
+                )}
               </td>
+              {canWrite && (
+                <td className="px-4 py-2.5 text-right">
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(s)}>
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => onDelete(s)}>
+                    <Trash2 className="size-3.5 text-destructive" />
+                  </Button>
+                </td>
               )}
             </tr>
           ))}
@@ -475,14 +611,14 @@ function TeacherTable({
               <td className="px-4 py-2.5 text-xs">{t.role}</td>
               <td className="px-4 py-2.5 font-medium">{t.name}</td>
               {canWrite && (
-              <td className="px-4 py-2.5 text-right">
-                <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => onDelete(t)}>
-                  <Trash2 className="size-3.5 text-destructive" />
-                </Button>
-              </td>
+                <td className="px-4 py-2.5 text-right">
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => onDelete(t)}>
+                    <Trash2 className="size-3.5 text-destructive" />
+                  </Button>
+                </td>
               )}
             </tr>
           ))}
