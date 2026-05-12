@@ -14,6 +14,7 @@ import {
   Loader2,
   ShieldCheck,
   CalendarDays,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -125,7 +126,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 Sign Out
               </Button>
             </>
-          ) : null}
+          ) : (
+            <button
+              onClick={() => setLocation("/access")}
+              className="w-full flex items-center justify-start gap-2 px-3 py-2 text-xs uppercase tracking-wider text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+              title="관리자 입장"
+            >
+              <Lock className="size-3.5" />
+              <span>관리자 입장</span>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -146,13 +156,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </a>
             </Link>
           ))}
-          {user && (
+          {user && isAdmin ? (
             <button
               onClick={signOut}
               className="ml-1 px-2 py-1.5 text-[10px] opacity-70"
               title="Sign out"
             >
               <LogOut className="size-3" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setLocation("/access")}
+              className="ml-1 px-2 py-1.5 text-[10px] opacity-60 hover:opacity-100"
+              title="관리자 입장"
+            >
+              <Lock className="size-3" />
             </button>
           )}
         </div>
