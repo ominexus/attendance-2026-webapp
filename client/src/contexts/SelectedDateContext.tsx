@@ -101,11 +101,15 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
           (a, b) => b.localeCompare(a),
         ) as string[];
         setAvailableDates(unique);
-        // 초기 진입: URL에 날짜가 없으면 가장 최근 기록 날짜로 설정
+        // 초기 진입: URL 날짜 검증 후 기본값 산정
         const fromUrl = readDateFromUrl();
-        if (!fromUrl && unique.length > 0) {
-          _setSelectedDate(unique[0]);
-          writeDateToUrl(unique[0]);
+        if (unique.length > 0) {
+          // URL 날짜가 있고 목록에 포함되면 그대로 사용
+          // URL 날짜가 없거나 목록에 없으면 가장 최신 날짜(unique[0])로 보정
+          if (!fromUrl || !unique.includes(fromUrl)) {
+            _setSelectedDate(unique[0]);
+            writeDateToUrl(unique[0]);
+          }
         } else if (!fromUrl) {
           // 기록이 없으면 오늘 기준 최근 일요일
           const defaultSunday = defaultDate();
