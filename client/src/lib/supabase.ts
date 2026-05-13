@@ -70,7 +70,6 @@ export interface AttendanceDate {
   label: string | null;
   is_default_sunday: boolean;
   is_active: boolean;
-  is_invite_event: boolean;
   created_at: string;
   updated_at: string;
 }

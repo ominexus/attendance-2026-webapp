@@ -1,6 +1,6 @@
 // GuestAddModal.tsx - 친구초청 손님 추가 모달 (M4-22)
 // - 이름 (필수), 데려온 학생 (옵션), 성별/학년/반 (옵션)
-// - guests INSERT + (해당 일자가 초청주이면) guest_attendance INSERT
+// - guests INSERT + guest_attendance INSERT (자동 출석 체크)
 // - Devotional Editorial 톤
 import { useState } from "react";
 import { supabase, type Guest, type Student } from "@/lib/supabase";
@@ -11,7 +11,7 @@ interface GuestAddModalProps {
   open: boolean;
   attendDate: string; // YYYY-MM-DD (현재 선택된 일요일)
   students: Student[];
-  autoCheckAttendance: boolean; // true이면 추가 시 즉시 출석 처리 (초청주)
+  autoCheckAttendance: boolean; // true이면 추가 시 즉시 출석 체크
   onClose: () => void;
   onAdded: (guest: Guest) => void;
 }
@@ -95,7 +95,7 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-xs text-muted-foreground">{attendDate} 친구초청 주에 손님을 추가합니다. 이름만 필수, 나머지는 선택입니다.</p>
+          <p className="text-xs text-muted-foreground">{attendDate} 손님을 추가합니다. 이름만 필수, 나머지는 선택입니다.</p>
 
           {/* 이름 */}
           <div>

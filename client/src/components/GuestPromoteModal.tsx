@@ -125,7 +125,7 @@ export function GuestPromoteModal({ guest, students, onClose, onPromoted }: Gues
 
         <div className="p-5 space-y-4">
           <p className="text-xs text-muted-foreground">
-            친구초청 주가 아닌 일요일에 이 손님을 출석 처리하려면 정규 학생으로 등록해야 합니다. 등록 시 손님 출석 이력이 새 학생으로 소급 이전됩니다.
+            이 손님을 정규 학생으로 등록합니다. 등록 시 손님 출석 이력이 새 학생으로 소급 이전됩니다.
           </p>
 
           {/* 이름 */}

@@ -47,7 +47,6 @@ export default function Home() {
   // Home은 일요일 단위 운영 - 선택 날짜를 일요일로 보정해서 사용
   const date = toSunday(selectedDate);
   const currentDateEntry = dateEntries.get(date);
-  const isInviteWeek = currentDateEntry?.is_invite_event ?? false;
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
   const [showInactive, setShowInactive] = useState<boolean>(false);
@@ -117,11 +116,6 @@ export default function Home() {
   async function toggleGuestAttendance(guest: Guest) {
     if (!isAdmin) {
       toast.error("관리자 권한이 필요합니다");
-      return;
-    }
-    // 일반 주(초청주 아님)에 출석 체크 시구 승격 모달 트리거
-    if (!isInviteWeek) {
-      setPromoteGuest(guest);
       return;
     }
     const current = guestAttendance.get(guest.id);
@@ -656,8 +650,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* M4-22: 초청주 손님 섹션 */}
-        {isInviteWeek && (
+        {/* M4-22: 손님 섹션 (모든 주에 항상 표시) */}
+        {
           <section className="mt-12">
             <div className="flex items-baseline gap-3 mb-4 border-b-2 border-rose-400 pb-2">
               <Sparkles className="size-5 text-rose-600" />
@@ -744,7 +738,7 @@ export default function Home() {
               </div>
             )}
           </section>
-        )}
+        }
       </div>
 
       {/* 출석 이력 패널 */}
@@ -770,20 +764,18 @@ export default function Home() {
         open={showAddGuest}
         attendDate={date}
         students={students}
-        autoCheckAttendance={isInviteWeek}
+        autoCheckAttendance={true}
         onClose={() => setShowAddGuest(false)}
         onAdded={(g) => {
           setGuests((prev) => [...prev, g]);
-          if (isInviteWeek) {
-            // 자동 출석 체크 되었으니 guest_attendance 맵에도 추가
-            setGuestAttendance((prev) => new Map(prev).set(g.id, {
-              id: "tmp-" + g.id,
-              guest_id: g.id,
-              attend_date: date,
-              status: true,
-              created_at: new Date().toISOString(),
-            }));
-          }
+          // 손님 추가 시 자동 출석 체크 → guest_attendance 맵에도 반영
+          setGuestAttendance((prev) => new Map(prev).set(g.id, {
+            id: "tmp-" + g.id,
+            guest_id: g.id,
+            attend_date: date,
+            status: true,
+            created_at: new Date().toISOString(),
+          }));
           setShowAddGuest(false);
         }}
       />

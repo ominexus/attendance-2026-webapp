@@ -96,8 +96,6 @@ export interface AttendanceDateEntry {
   label: string | null;
   is_default_sunday: boolean;
   is_active: boolean;
-  /** 친구초청잔치 주 여부 (M4-22) */
-  is_invite_event: boolean;
   /** 오늘 이후 미래 날짜 여부 (클라이언트 계산) */
   isFuture?: boolean;
 }
@@ -153,7 +151,7 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
     (async () => {
       const { data, error } = await supabase
         .from("attendance_dates")
-        .select("attendance_date, service_type, label, is_default_sunday, is_active, is_invite_event")
+        .select("attendance_date, service_type, label, is_default_sunday, is_active")
         .eq("is_active", true)
         .lte("attendance_date", futureLimit)
         .gte("attendance_date", "2026-01-01")

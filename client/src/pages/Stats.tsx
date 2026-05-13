@@ -57,8 +57,7 @@ export default function Stats() {
   const [loading, setLoading] = useState(true);
 
   // 기준일: SelectedDateContext와 동기화
-  const { selectedDate: refDate, dateEntries } = useSelectedDate();
-  const isInviteWeek = dateEntries.get(refDate)?.is_invite_event ?? false;
+  const { selectedDate: refDate } = useSelectedDate();
 
   useEffect(() => {
     let cancelled = false;
@@ -318,8 +317,8 @@ export default function Stats() {
               />
             </div>
 
-            {/* M4-22: 친구초청 주 KPI - 초청주에만 노출 */}
-            {isInviteWeek && (
+             {/* M4-22: 손님 출석 KPI - 해당 날짜 손님 출석 1명 이상일 때만 노출 */}
+            {thisWeekGuestCount > 0 && (
               <div className="mb-10 border-l-4 border-rose-400 bg-rose-50/40 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="size-4 text-rose-600" />
