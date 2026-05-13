@@ -123,6 +123,13 @@ export function DateSpinner({ snapToSunday = false, className = "" }: DateSpinne
         </span>
       )}
 
+      {/* 친구초청 주 배지 (M4-22) */}
+      {currentEntry?.is_invite_event && (
+        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-rose-50 border border-rose-300 text-rose-700 font-medium">
+          친구초청
+        </span>
+      )}
+
       {/* admin 전용: 새 날짜 입력 보조 컨트롤 */}
       {isAdmin && (
         <div className="flex items-center gap-1">

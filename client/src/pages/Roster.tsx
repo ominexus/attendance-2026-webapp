@@ -3,7 +3,7 @@
 // 마일스톤 4-9: 학생 행 클릭 → 이력 패널 + 비활동 후보 알림 배지/모달 (기능 A)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Teacher, type Attendance } from "@/lib/supabase";
+import { supabase, type Student, type Teacher, type Attendance, type Guest } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,13 +15,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Pencil, Trash2, Upload, Download, AlertTriangle, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Upload, Download, AlertTriangle, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
-
-type Tab = "students" | "teachers";
+import { GuestPromoteModal } from "@/components/GuestPromoteModal";
+type Tab = "students" | "teachers" | "guests";
 type ActiveFilter = "all" | "active" | "inactive";
 
 // 가장 최근 일요일 기준 N개 일요일 목록 (내림차순)
@@ -56,6 +56,10 @@ export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allAttendance, setAllAttendance] = useState<Attendance[]>([]);
+  // M4-22: 친구초청 손님
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [guestAttendCounts, setGuestAttendCounts] = useState<Map<string, number>>(new Map());
+  const [promoteGuest, setPromoteGuest] = useState<Guest | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
   const [editing, setEditing] = useState<
@@ -76,7 +80,7 @@ export default function Roster() {
 
   async function reload() {
     setLoading(true);
-    const [{ data: s }, { data: t }, { data: a }] = await Promise.all([
+    const [{ data: s }, { data: t }, { data: a }, { data: g }, { data: ga }] = await Promise.all([
       supabase.from("students").select("*").order("grade").order("class_num").order("name"),
       supabase.from("teachers").select("*").order("role").order("name"),
       // 최근 8주 출석 기록만 (후보 산정에 충분)
@@ -85,9 +89,17 @@ export default function Roster() {
         .select("student_id,attendance_date,status")
         .gte("attendance_date", recentSundays(8)[7])
         .eq("status", true),
+      supabase.from("guests").select("*").eq("is_promoted", false).order("first_visit_date", { ascending: false }),
+      supabase.from("guest_attendance").select("guest_id,status").eq("status", true),
     ]);
     setStudents((s as Student[]) ?? []);
     setTeachers((t as Teacher[]) ?? []);
+    setGuests((g as Guest[]) ?? []);
+    const counts = new Map<string, number>();
+    for (const row of (ga as { guest_id: string; status: boolean }[]) ?? []) {
+      counts.set(row.guest_id, (counts.get(row.guest_id) ?? 0) + 1);
+    }
+    setGuestAttendCounts(counts);
     setAllAttendance((a as Attendance[]) ?? []);
     setLoading(false);
   }
@@ -186,7 +198,16 @@ export default function Roster() {
     else { toast.success("저장되었습니다"); setEditing(null); reload(); }
   }
 
-  async function remove(kind: Tab, id: string, label: string) {
+  async function removeGuest(g: Guest) {
+    if (!isAdmin) return;
+    if (!confirm(`'${g.name}' 손님을 삭제하시겠습니까?\n\u00b7 출석 이력도 함께 삭제됩니다`)) return;
+    const { error } = await supabase.from("guests").delete().eq("id", g.id);
+    if (error) { toast.error("삭제 실패: " + error.message); return; }
+    setGuests((prev) => prev.filter((x) => x.id !== g.id));
+    toast.success(`'${g.name}' 손님 삭제됨`);
+  }
+
+  async function remove(kind: "students" | "teachers", id: string, label: string) {
     if (!confirm(`${label} 항목을 삭제하시겠습니까?`)) return;
     const { error } = await supabase.from(kind).delete().eq("id", id);
     if (error) toast.error("삭제 실패: " + error.message);
@@ -298,17 +319,18 @@ export default function Roster() {
         {/* Tabs + Search */}
         <div className="flex items-center justify-between mb-4 border-b border-foreground/15">
           <div className="flex">
-            {(["students", "teachers"] as Tab[]).map((t) => (
+            {(["students", "teachers", "guests"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-4 py-2.5 text-sm uppercase tracking-wider border-b-2 -mb-px transition-colors ${
+                className={`px-4 py-2.5 text-sm uppercase tracking-wider border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                   tab === t
                     ? "border-[oklch(0.32_0.05_250)] text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t === "students" ? `학생 (${students.length})` : `교사 (${teachers.length})`}
+                {t === "guests" && <Sparkles className="size-3.5" />}
+                {t === "students" ? `학생 (${students.length})` : t === "teachers" ? `교사 (${teachers.length})` : `초청 손님 (${guests.length})`}
               </button>
             ))}
           </div>
@@ -373,15 +395,40 @@ export default function Roster() {
             onDelete={(s) => remove("students", s.id, s.name)}
             onToggleActive={toggleActive}
           />
-        ) : (
+        ) : tab === "teachers" ? (
           <TeacherTable
             rows={filteredTeachers}
             canWrite={isAdmin}
             onEdit={(t) => setEditing({ kind: "teacher", data: t })}
             onDelete={(t) => remove("teachers", t.id, t.name)}
           />
+        ) : (
+          <GuestTable
+            rows={guests.filter((g) => !keyword || g.name.toLowerCase().includes(keyword.toLowerCase()))}
+            students={students}
+            attendCounts={guestAttendCounts}
+            canWrite={isAdmin}
+            onPromote={(g) => setPromoteGuest(g)}
+            onDelete={(g) => removeGuest(g)}
+          />
         )}
       </div>
+
+      {/* M4-22: 손님 승격 모달 */}
+      <GuestPromoteModal
+        guest={promoteGuest}
+        students={students}
+        onClose={() => setPromoteGuest(null)}
+        onPromoted={(g, ns) => {
+          setGuests((prev) => prev.filter((x) => x.id !== g.id));
+          setStudents((prev) => [...prev, ns]);
+          setPromoteGuest(null);
+          // 해당 손님의 출석 이력은 이미 소급 이전됨 → 카운트 맵에서 제거
+          setGuestAttendCounts((prev) => { const m = new Map(prev); m.delete(g.id); return m; });
+          // 전체 리로드로 출석 집계 재계산 (새 student에 고른 attendance 적용)
+          reload();
+        }}
+      />
 
       {/* Edit Dialog */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
@@ -741,6 +788,88 @@ function TeacherTable({ rows, canWrite, onEdit, onDelete }: {
       </table>
       {rows.length === 0 && (
         <div className="text-center text-muted-foreground text-sm py-12">결과가 없습니다.</div>
+      )}
+    </div>
+  );
+}
+
+
+// M4-22: 친구초청 손님 테이블
+function GuestTable({
+  rows, students, attendCounts, canWrite, onPromote, onDelete,
+}: {
+  rows: Guest[];
+  students: Student[];
+  attendCounts: Map<string, number>;
+  canWrite: boolean;
+  onPromote: (g: Guest) => void;
+  onDelete: (g: Guest) => void;
+}) {
+  function inviterName(id: string | null) {
+    if (!id) return "—";
+    const s = students.find((x) => x.id === id);
+    return s ? `${s.grade} ${s.class_num} ${s.name}` : "(삭제됨)";
+  }
+  return (
+    <div className="border border-foreground/15 bg-white/60 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-foreground/5 text-[10px] uppercase tracking-wider">
+          <tr className="text-left">
+            <th className="px-3 py-2">이름</th>
+            <th className="px-3 py-2">데려온 친구</th>
+            <th className="px-3 py-2">학년/반</th>
+            <th className="px-3 py-2">성별</th>
+            <th className="px-3 py-2">첫 방문일</th>
+            <th className="text-center px-3 py-2 w-20">출석 횟수</th>
+            <th className="px-3 py-2">메모</th>
+            {canWrite && <th className="text-right px-3 py-2 w-32">관리</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((g) => (
+            <tr key={g.id} className="border-t border-foreground/10 hover:bg-foreground/3 transition-colors">
+              <td className="px-3 py-2 font-display">{g.name}</td>
+              <td className="px-3 py-2 text-muted-foreground">{inviterName(g.inviter_student_id)}</td>
+              <td className="px-3 py-2 text-muted-foreground tabular-nums">
+                {g.grade ? `${g.grade}학년` : "—"}{g.class_num ? ` ${g.class_num}반` : ""}
+              </td>
+              <td className="px-3 py-2 text-muted-foreground">{g.gender || "—"}</td>
+              <td className="px-3 py-2 text-muted-foreground tabular-nums">{g.first_visit_date}</td>
+              <td className="px-3 py-2 text-center tabular-nums">
+                <span className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 text-xs",
+                  (attendCounts.get(g.id) ?? 0) > 0
+                    ? "bg-rose-50 text-rose-700 border border-rose-200"
+                    : "text-muted-foreground"
+                )}>
+                  {attendCounts.get(g.id) ?? 0}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-xs text-muted-foreground max-w-[180px] truncate">{g.note || ""}</td>
+              {canWrite && (
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex gap-1">
+                    <Button
+                      size="sm"
+                      onClick={() => onPromote(g)}
+                      className="h-7 px-2 text-[11px] bg-rose-600 text-white hover:bg-rose-700"
+                    >
+                      <Sparkles className="size-3" /> 정규 학생으로 승격
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => onDelete(g)} className="h-7 px-2 text-muted-foreground hover:text-red-500">
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && (
+        <div className="text-center text-muted-foreground text-sm py-12">
+          미승격 손님이 없습니다.
+        </div>
       )}
     </div>
   );

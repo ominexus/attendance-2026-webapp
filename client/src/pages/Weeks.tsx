@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSelectedDate } from "@/contexts/SelectedDateContext";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Calendar, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Calendar, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { formatDateLabel } from "@/contexts/SelectedDateContext";
 
 interface AttendanceDateRow {
@@ -17,6 +17,7 @@ interface AttendanceDateRow {
   label: string | null;
   is_default_sunday: boolean;
   is_active: boolean;
+  is_invite_event: boolean;
   created_at: string;
   // 집계 (클라이언트 조인)
   attendance_count?: number;
@@ -30,10 +31,11 @@ export default function Weeks() {
   const [rows, setRows] = useState<AttendanceDateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ service_type: string; label: string; is_active: boolean }>({
+  const [editForm, setEditForm] = useState<{ service_type: string; label: string; is_active: boolean; is_invite_event: boolean }>({
     service_type: "주일예배",
     label: "",
     is_active: true,
+    is_invite_event: false,
   });
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState({ attendance_date: "", service_type: "주일예배", label: "" });
@@ -78,6 +80,7 @@ export default function Weeks() {
       service_type: row.service_type,
       label: row.label || "",
       is_active: row.is_active,
+      is_invite_event: row.is_invite_event,
     });
   }
 
@@ -90,6 +93,7 @@ export default function Weeks() {
         service_type: editForm.service_type,
         label: editForm.label.trim() || null,
         is_active: editForm.is_active,
+        is_invite_event: editForm.is_invite_event,
       })
       .eq("attendance_date", date);
     setSaving(false);
@@ -98,6 +102,23 @@ export default function Weeks() {
     setEditingDate(null);
     fetchRows();
     refreshDates();
+  }
+
+  // 친구초청 주 토글 (빠른 토글)
+  async function toggleInviteEvent(row: AttendanceDateRow) {
+    const next = !row.is_invite_event;
+    setRows((prev) => prev.map((r) => r.attendance_date === row.attendance_date ? { ...r, is_invite_event: next } : r));
+    const { error } = await supabase
+      .from("attendance_dates")
+      .update({ is_invite_event: next })
+      .eq("attendance_date", row.attendance_date);
+    if (error) {
+      toast.error("친구초청 주 토글 실패");
+      setRows((prev) => prev.map((r) => r.attendance_date === row.attendance_date ? { ...r, is_invite_event: !next } : r));
+    } else {
+      toast.success(next ? "친구초청 주로 지정" : "친구초청 주 해제");
+      refreshDates();
+    }
   }
 
   // 활동 토글 (빠른 토글)
@@ -258,6 +279,7 @@ export default function Weeks() {
               onSaveEdit={saveEdit}
               onCancelEdit={() => setEditingDate(null)}
               onToggleActive={toggleActive}
+              onToggleInviteEvent={toggleInviteEvent}
               onDelete={deleteRow}
               saving={saving}
             />
@@ -282,6 +304,7 @@ export default function Weeks() {
                 onSaveEdit={saveEdit}
                 onCancelEdit={() => setEditingDate(null)}
                 onToggleActive={toggleActive}
+                onToggleInviteEvent={toggleInviteEvent}
                 onDelete={deleteRow}
                 saving={saving}
               />
@@ -298,19 +321,20 @@ export default function Weeks() {
 interface WeekTableProps {
   rows: AttendanceDateRow[];
   editingDate: string | null;
-  editForm: { service_type: string; label: string; is_active: boolean };
-  setEditForm: React.Dispatch<React.SetStateAction<{ service_type: string; label: string; is_active: boolean }>>;
+  editForm: { service_type: string; label: string; is_active: boolean; is_invite_event: boolean };
+  setEditForm: React.Dispatch<React.SetStateAction<{ service_type: string; label: string; is_active: boolean; is_invite_event: boolean }>>;
   onStartEdit: (row: AttendanceDateRow) => void;
   onSaveEdit: (date: string) => void;
   onCancelEdit: () => void;
   onToggleActive: (row: AttendanceDateRow) => void;
+  onToggleInviteEvent: (row: AttendanceDateRow) => void;
   onDelete: (row: AttendanceDateRow) => void;
   saving: boolean;
 }
 
 function WeekTable({
   rows, editingDate, editForm, setEditForm,
-  onStartEdit, onSaveEdit, onCancelEdit, onToggleActive, onDelete, saving,
+  onStartEdit, onSaveEdit, onCancelEdit, onToggleActive, onToggleInviteEvent, onDelete, saving,
 }: WeekTableProps) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground py-4">항목 없음</p>;
@@ -325,6 +349,7 @@ function WeekTable({
             <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-medium w-28">예배 종류</th>
             <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-medium">라벨</th>
             <th className="text-center px-3 py-2 text-[10px] uppercase tracking-wider font-medium w-16">활동</th>
+            <th className="text-center px-3 py-2 text-[10px] uppercase tracking-wider font-medium w-24">친구초청</th>
             <th className="text-center px-3 py-2 text-[10px] uppercase tracking-wider font-medium w-20">출석 입력</th>
             <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider font-medium w-20">작업</th>
           </tr>
@@ -402,6 +427,36 @@ function WeekTable({
                       }`}
                     >
                       {row.is_active ? "활동" : "비활동"}
+                    </button>
+                  )}
+                </td>
+
+                {/* 친구초청 주 토글 */}
+                <td className="px-3 py-2 text-center">
+                  {isEditing ? (
+                    <button
+                      onClick={() => setEditForm((f) => ({ ...f, is_invite_event: !f.is_invite_event }))}
+                      className={`text-xs px-2 py-0.5 border transition-colors inline-flex items-center gap-1 ${
+                        editForm.is_invite_event
+                          ? "border-rose-300 bg-rose-50 text-rose-700"
+                          : "border-foreground/15 text-muted-foreground"
+                      }`}
+                    >
+                      <Sparkles className="size-3" />
+                      {editForm.is_invite_event ? "초청 ON" : "OFF"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onToggleInviteEvent(row)}
+                      className={`text-xs px-2 py-0.5 border transition-colors inline-flex items-center gap-1 ${
+                        row.is_invite_event
+                          ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                          : "border-foreground/15 text-muted-foreground hover:bg-foreground/5"
+                      }`}
+                      title={row.is_invite_event ? "친구초청 주 해제" : "친구초청 주로 지정"}
+                    >
+                      <Sparkles className="size-3" />
+                      {row.is_invite_event ? "초청 ON" : "OFF"}
                     </button>
                   )}
                 </td>

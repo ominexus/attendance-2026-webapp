@@ -5,8 +5,8 @@
 // 마일스톤 4-12: 기준일 변경 컨트롤 + 학년별 출석 통계 섹션 추가
 import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
-import { Loader2, MessageSquare } from "lucide-react";
+import { supabase, type Student, type Attendance, type AbsenceNote, type GuestAttendance } from "@/lib/supabase";
+import { Loader2, MessageSquare, Sparkles } from "lucide-react";
 import { DateSpinner } from "@/components/DateSpinner";
 import { useSelectedDate } from "@/contexts/SelectedDateContext";
 import { toast } from "sonner";
@@ -53,16 +53,18 @@ export default function Stats() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [notes, setNotes] = useState<AbsenceNote[]>([]);
+  const [guestAttendance, setGuestAttendance] = useState<GuestAttendance[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 기준일: SelectedDateContext와 동기화
-  const { selectedDate: refDate } = useSelectedDate();
+  const { selectedDate: refDate, dateEntries } = useSelectedDate();
+  const isInviteWeek = dateEntries.get(refDate)?.is_invite_event ?? false;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [sRes, aRes, nRes] = await Promise.all([
+      const [sRes, aRes, nRes, gaRes] = await Promise.all([
         supabase.from("students").select("*").eq("is_active", true),
         supabase.from("attendance").select("*").eq("status", true),
         supabase
@@ -71,6 +73,7 @@ export default function Stats() {
           .order("attend_date", { ascending: false })
           .order("updated_at", { ascending: false })
           .limit(50),
+        supabase.from("guest_attendance").select("*").eq("status", true),
       ]);
       if (cancelled) return;
       if (sRes.error || aRes.error || nRes.error) {
@@ -79,6 +82,7 @@ export default function Stats() {
         setStudents((sRes.data as Student[]) ?? []);
         setAttendance((aRes.data as Attendance[]) ?? []);
         setNotes((nRes.data as AbsenceNote[]) ?? []);
+        if (!gaRes.error) setGuestAttendance((gaRes.data as GuestAttendance[]) ?? []);
       }
       setLoading(false);
     })();
@@ -206,6 +210,12 @@ export default function Stats() {
     [notes, refDate],
   );
 
+  // 7) M4-22: 기준일 손님 출석 수 (주로 초청주에서만 의미 있음)
+  const thisWeekGuestCount = useMemo(
+    () => guestAttendance.filter((ga) => ga.attend_date === refDate).length,
+    [guestAttendance, refDate],
+  );
+
   // ── 학년별 통계 (기준일 기반) ─────────────────────────────
   const gradeStats = useMemo(() => {
     const grades = ["1학년", "2학년", "3학년"];
@@ -307,6 +317,29 @@ export default function Stats() {
                 sub="결석 사유 기록"
               />
             </div>
+
+            {/* M4-22: 친구초청 주 KPI - 초청주에만 노출 */}
+            {isInviteWeek && (
+              <div className="mb-10 border-l-4 border-rose-400 bg-rose-50/40 px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="size-4 text-rose-600" />
+                  <span className="text-[10px] uppercase tracking-[0.25em] text-rose-700 font-medium">Friend Invitation Week</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Kpi
+                    label="손님 출석"
+                    value={`${thisWeekGuestCount}명`}
+                    sub={`정규 학생 ${thisWeekPresent}명 + 손님 ${thisWeekGuestCount}명`}
+                    highlight
+                  />
+                  <Kpi
+                    label="전체 출석 (초청주)"
+                    value={`${thisWeekPresent + thisWeekGuestCount}명`}
+                    sub="정규 + 손님 합산"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* 학년별 통계 */}
             <Section title="By Grade" subtitle="학년별 출석 현황">

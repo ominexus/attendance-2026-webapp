@@ -61,3 +61,40 @@ export interface AbsenceNote {
   created_at: string;
   updated_at: string;
 }
+
+
+// 출석 가능 일자 (Weeks 관리)
+export interface AttendanceDate {
+  attendance_date: string; // YYYY-MM-DD (PK)
+  service_type: string; // 기본 '주일예배'
+  label: string | null;
+  is_default_sunday: boolean;
+  is_active: boolean;
+  is_invite_event: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// 친구초청잔치 1회성 손님
+export interface Guest {
+  id: string;
+  name: string;
+  gender: string | null; // '남' | '여' | null
+  grade: number | null;
+  class_num: number | null;
+  inviter_student_id: string | null; // students FK (데려온 학생)
+  first_visit_date: string; // YYYY-MM-DD
+  note: string | null;
+  promoted_student_id: string | null; // 승격된 정규 학생 ID
+  is_promoted: boolean;
+  created_at: string;
+}
+
+// 손님 출석
+export interface GuestAttendance {
+  id: string;
+  guest_id: string;
+  attend_date: string; // YYYY-MM-DD
+  status: boolean;
+  created_at: string;
+}

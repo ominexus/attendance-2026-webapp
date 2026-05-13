@@ -7,15 +7,17 @@
 //              카드 배경 클릭 → 출석 토글 (기존 동작 유지)
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Attendance, type AbsenceNote } from "@/lib/supabase";
+import { supabase, type Student, type Attendance, type AbsenceNote, type Guest, type GuestAttendance } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSelectedDate, toSunday } from "@/contexts/SelectedDateContext";
 import { DateSpinner } from "@/components/DateSpinner";
-import { Loader2, Eye, MessageSquare, Check } from "lucide-react";
+import { Loader2, Eye, MessageSquare, Check, Sparkles, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
+import { GuestPromoteModal } from "@/components/GuestPromoteModal";
+import { GuestAddModal } from "@/components/GuestAddModal";
 
 function normalizeGender(g: string | null): "남" | "여" | "미지정" {
   if (!g) return "미지정";
@@ -41,9 +43,11 @@ export default function Home() {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map());
-  const { selectedDate, refreshDates } = useSelectedDate();
+  const { selectedDate, refreshDates, dateEntries } = useSelectedDate();
   // Home은 일요일 단위 운영 - 선택 날짜를 일요일로 보정해서 사용
   const date = toSunday(selectedDate);
+  const currentDateEntry = dateEntries.get(date);
+  const isInviteWeek = currentDateEntry?.is_invite_event ?? false;
   const [gradeFilter, setGradeFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
   const [showInactive, setShowInactive] = useState<boolean>(false);
@@ -52,6 +56,12 @@ export default function Home() {
   const [openNoteFor, setOpenNoteFor] = useState<string | null>(null);
   // 이력 패널
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
+  // M4-22: 손님 관리
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [guestAttendance, setGuestAttendance] = useState<Map<string, GuestAttendance>>(new Map());
+  const [showAddGuest, setShowAddGuest] = useState(false);
+  const [promoteGuest, setPromoteGuest] = useState<Guest | null>(null);
+  const [savingGuest, setSavingGuest] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -73,9 +83,11 @@ export default function Home() {
     let cancelled = false;
     setFetching(true);
     (async () => {
-      const [attRes, noteRes] = await Promise.all([
+      const [attRes, noteRes, guestRes, gAttRes] = await Promise.all([
         supabase.from("attendance").select("*").eq("attendance_date", date),
         supabase.from("absence_notes").select("*").eq("attend_date", date),
+        supabase.from("guests").select("*").eq("is_promoted", false).order("created_at", { ascending: true }),
+        supabase.from("guest_attendance").select("*").eq("attend_date", date),
       ]);
       if (cancelled) return;
       if (attRes.error) toast.error("출석 로드 실패: " + attRes.error.message);
@@ -90,10 +102,87 @@ export default function Home() {
         for (const n of (noteRes.data as AbsenceNote[]) ?? []) nm.set(n.student_id, n);
         setNotes(nm);
       }
+      if (!guestRes.error) setGuests((guestRes.data as Guest[]) ?? []);
+      if (!gAttRes.error) {
+        const gm = new Map<string, GuestAttendance>();
+        for (const ga of (gAttRes.data as GuestAttendance[]) ?? []) gm.set(ga.guest_id, ga);
+        setGuestAttendance(gm);
+      }
       setFetching(false);
     })();
     return () => { cancelled = true; };
   }, [date]);
+
+  // M4-22: 손님 출석 도장 토글
+  async function toggleGuestAttendance(guest: Guest) {
+    if (!isAdmin) {
+      toast.error("관리자 권한이 필요합니다");
+      return;
+    }
+    // 일반 주(초청주 아님)에 출석 체크 시구 승격 모달 트리거
+    if (!isInviteWeek) {
+      setPromoteGuest(guest);
+      return;
+    }
+    const current = guestAttendance.get(guest.id);
+    const next = !current?.status;
+    setSavingGuest((p) => new Set(p).add(guest.id));
+    setGuestAttendance((prev) => {
+      const m = new Map(prev);
+      if (current) m.set(guest.id, { ...current, status: next });
+      else m.set(guest.id, { id: "tmp-" + guest.id, guest_id: guest.id, attend_date: date, status: next, created_at: new Date().toISOString() });
+      return m;
+    });
+    const { error, data } = await supabase
+      .from("guest_attendance")
+      .upsert({ guest_id: guest.id, attend_date: date, status: next }, { onConflict: "guest_id,attend_date" })
+      .select()
+      .single();
+    if (error) {
+      setGuestAttendance((prev) => {
+        const m = new Map(prev);
+        if (current) m.set(guest.id, current);
+        else m.delete(guest.id);
+        return m;
+      });
+      toast.error(`손님 체크 실패: ${error.message}`);
+    } else if (data) {
+      setGuestAttendance((prev) => new Map(prev).set(guest.id, data as GuestAttendance));
+    }
+    setSavingGuest((p) => { const s = new Set(p); s.delete(guest.id); return s; });
+  }
+
+  // M4-22: 손님 삭제 (admin only)
+  async function deleteGuest(guest: Guest) {
+    if (!isAdmin) return;
+    if (!confirm(`'${guest.name}' 손님을 삭제하시겠습니까?\n\u00b7 이 손님의 출석 이력도 함께 삭제됩니다`)) return;
+    const { error } = await supabase.from("guests").delete().eq("id", guest.id);
+    if (error) { toast.error("삭제 실패: " + error.message); return; }
+    setGuests((prev) => prev.filter((g) => g.id !== guest.id));
+    setGuestAttendance((prev) => { const m = new Map(prev); m.delete(guest.id); return m; });
+    toast.success(`'${guest.name}' 손님 삭제됨`);
+  }
+
+  // M4-22: 승격 완료 콜백
+  async function handlePromoted(promoted: Guest, newStudent: Student) {
+    setGuests((prev) => prev.filter((g) => g.id !== promoted.id));
+    setStudents((prev) => [...prev, newStudent]);
+    setPromoteGuest(null);
+    // 이 날짜의 손님 출석 이력은 이미 소급 이전되어 student_id 출석으로 존재
+    const ga = guestAttendance.get(promoted.id);
+    if (ga) {
+      // 출석 맵에서 제거하고 새 student_id 출석으로 대체 (아래 attendance 재조회로 표시)
+      setGuestAttendance((prev) => { const m = new Map(prev); m.delete(promoted.id); return m; });
+    }
+    // 해당 날짜 출석 다시 로드 (소급 이전된 attendance 반영)
+    const { data: attData } = await supabase.from("attendance").select("*").eq("attendance_date", date);
+    if (attData) {
+      const m = new Map<string, Attendance>();
+      for (const a of attData as Attendance[]) m.set(a.student_id, a);
+      setAttendance(m);
+    }
+    toast.success(`'${newStudent.name}' 정규 학생으로 승격됨 (고이력 소급 연결 완료)`);
+  }
 
   const grades = useMemo(
     () => Array.from(new Set(students.map((s) => s.grade))).sort(),
@@ -566,6 +655,96 @@ export default function Home() {
             })}
           </div>
         )}
+
+        {/* M4-22: 초청주 손님 섹션 */}
+        {isInviteWeek && (
+          <section className="mt-12">
+            <div className="flex items-baseline gap-3 mb-4 border-b-2 border-rose-400 pb-2">
+              <Sparkles className="size-5 text-rose-600" />
+              <h2 className="font-display text-2xl italic text-rose-700">친구초청 손님</h2>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                손님 {guests.length}명
+                {guests.filter((g) => guestAttendance.get(g.id)?.status).length > 0 && (
+                  <span className="text-rose-600 ml-2">
+                    출석 {guests.filter((g) => guestAttendance.get(g.id)?.status).length}
+                  </span>
+                )}
+              </span>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowAddGuest(true)}
+                  className="ml-auto flex items-center gap-1 text-xs px-2.5 py-1 bg-rose-600 text-white hover:bg-rose-700 transition-colors"
+                >
+                  <UserPlus className="size-3.5" /> 손님 추가
+                </button>
+              )}
+            </div>
+
+            {guests.length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-8 border border-dashed border-foreground/15 bg-white/40">
+                아직 등록된 손님이 없습니다{isAdmin ? ". 우상단 [손님 추가] 버튼으로 시작하세요." : ""}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
+                {guests.map((g) => {
+                  const present = guestAttendance.get(g.id)?.status ?? false;
+                  const isSavingG = savingGuest.has(g.id);
+                  const inviter = g.inviter_student_id ? students.find((s) => s.id === g.inviter_student_id) : null;
+                  return (
+                    <div
+                      key={g.id}
+                      className={cn(
+                        "relative border transition-all duration-150 px-3 py-2.5 group",
+                        present
+                          ? "border-rose-400 bg-white"
+                          : "border-foreground/15 bg-white",
+                        isAdmin ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : ""
+                      )}
+                      onClick={() => isAdmin && toggleGuestAttendance(g)}
+                      role={isAdmin ? "button" : undefined}
+                      tabIndex={isAdmin ? 0 : undefined}
+                    >
+                      <div className="absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 bg-rose-50 text-rose-600 border border-rose-200">
+                        손님
+                      </div>
+                      <div className="font-display text-base leading-tight mt-3">
+                        {g.name}
+                      </div>
+                      {inviter && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                          ← {inviter.name}
+                        </div>
+                      )}
+                      {(g.grade || g.class_num || g.gender) && (
+                        <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+                          {g.grade ? `${g.grade}학년 ` : ""}{g.class_num ? `${g.class_num}반 ` : ""}{g.gender || ""}
+                        </div>
+                      )}
+                      {present && (
+                        <div className="absolute -top-2 -right-2 size-10 rounded-full border-2 border-rose-500 text-rose-600 flex items-center justify-center font-display italic text-[9px] tracking-wider rotate-[-12deg] bg-white/90 shadow-sm">
+                          출석
+                        </div>
+                      )}
+                      {isSavingG && (
+                        <Loader2 className="absolute top-2 right-2 size-3 animate-spin text-muted-foreground" />
+                      )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); deleteGuest(g); }}
+                          className="absolute bottom-1 right-1 p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="손님 삭제"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {/* 출석 이력 패널 */}
@@ -575,6 +754,37 @@ export default function Home() {
         onStudentUpdate={(updated) => {
           setStudents((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
           setHistoryStudent(updated);
+        }}
+      />
+
+      {/* M4-22: 손님 승격 모달 */}
+      <GuestPromoteModal
+        guest={promoteGuest}
+        students={students}
+        onClose={() => setPromoteGuest(null)}
+        onPromoted={handlePromoted}
+      />
+
+      {/* M4-22: 손님 추가 모달 */}
+      <GuestAddModal
+        open={showAddGuest}
+        attendDate={date}
+        students={students}
+        autoCheckAttendance={isInviteWeek}
+        onClose={() => setShowAddGuest(false)}
+        onAdded={(g) => {
+          setGuests((prev) => [...prev, g]);
+          if (isInviteWeek) {
+            // 자동 출석 체크 되었으니 guest_attendance 맵에도 추가
+            setGuestAttendance((prev) => new Map(prev).set(g.id, {
+              id: "tmp-" + g.id,
+              guest_id: g.id,
+              attend_date: date,
+              status: true,
+              created_at: new Date().toISOString(),
+            }));
+          }
+          setShowAddGuest(false);
         }}
       />
     </AppLayout>

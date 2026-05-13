@@ -32,6 +32,7 @@ GitHub Pages를 통해 정적 호스팅하며, 인증·데이터는 Supabase가 
 | 4-15 | DateSpinner 2026년 필터 + 기본값 자동 보정 | 완료 |
 | 4-16 | DateSpinner 기본값 자동 보정 (URL 날짜가 목록에 없으면 최신 날짜로 보정) | 완료 |
 | 4-17 | attendance_dates 테이블 + DateSpinner 소스 전환 + 주간 관리 페이지(/weeks) | 완료 |
+| 4-22 | **친구초청 손님 관리** (guests + guest_attendance, 초청주 플래그, 손님 추가/출석/승격, 출석 이력 소급 이전) | **완료** |
 
 ---
 
@@ -379,6 +380,46 @@ update public.profiles set role='admin' where email='admin@example.com';
 - `/` 출석 페이지: **결석 카드**에만 메모 입력 영역 노출. 누구나 작성 가능 (비로그인 포함). Ctrl+Enter/Enter 키 저장, Optimistic UI + 실패 시 롤백
 - `/stats`: 하단에 "Absence Notes" 섹션 추가. 최근 50건 날짜·학생·사유·작성자 표시
 - 메모 쓰기는 출석 입력(admin 전용)과 별도 흐름으로 작동 → Guest도 사유만 입력 가능
+
+---
+
+## 친구초청 손님 관리 (마일스톤 4-22)
+
+친구초청잔치 같은 1회성 출석 손님을 관리하고, 정기 출석 시 정규 학생으로 반자동 승격하는 기능.
+
+### 데이터 모델
+
+- `attendance_dates.is_invite_event` (boolean, default false): 친구초청 주임을 표시하는 플래그
+- `public.guests`: 1회성 손님 마스터
+  - `name` 필수, `gender/grade/class_num/note` 옵션
+  - `inviter_student_id` (students FK): 데려온 학생
+  - `first_visit_date`: 최초 방문 일요일
+  - `is_promoted/promoted_student_id`: 정규 승격 여부 + 연결된 학생
+- `public.guest_attendance`: 손님 출석 기록 (`(guest_id, attend_date)` UNIQUE)
+  - 출석 테이블과 분리 → 정규 학생 통계 오염 방지
+
+### RLS
+
+| 테이블 | SELECT | INSERT/UPDATE | DELETE |
+| --- | --- | --- | --- |
+| `guests`, `guest_attendance` | anon + authenticated | `is_admin()` 만 | `is_admin()` 만 |
+
+### 승격 흐름 (반자동)
+
+1. `/roster` → 초청 손님 탭에서 `[정규 학생으로 승격]` 클릭
+2. 모달에서 학년/반/성별/연락처/생년월일/학교 입력 (이름/데려온 친구 자동 채움)
+3. 트랜잭션:
+   - `students` INSERT (`guide` 필드에 inviter 학생명 자동 복사)
+   - `guest_attendance` → `attendance` 소급 이전 (status=true 만, 동일 날짜 중복은 무시)
+   - `guests.is_promoted=true`, `promoted_student_id` 연결
+4. 승격 후 통계/출석 화면에서 정규 학생 출석으로 누적
+
+### UI
+
+- **`/weeks`**: 일자 행에 "친구초청" 토글 컬럼 추가 (admin만)
+- **`/`(Home)**: 초청주에는 정규 학생 그리드 아래에 "초청 손님" 섹션 + `[+ 손님 추가]` 모달 + 도장 토글 + 메모. 일반 주에는 미노출.
+- **`/roster` 초청 손님 탭**: 미승격 손님 목록(이름/데려온 친구/학년반/성별/첫 방문일/출석 횟수/메모) + 승격/삭제 버튼
+- **`/stats`**: 초청주에만 "Friend Invitation Week" KPI 박스 추가 (손님 출석 수, 정규+손님 합산)
 
 ---
 
