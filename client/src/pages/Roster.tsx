@@ -56,7 +56,7 @@ export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allAttendance, setAllAttendance] = useState<Attendance[]>([]);
-  // M4-22: 친구초청 손님
+  // M4-22: 친구새친구
   const [guests, setGuests] = useState<Guest[]>([]);
   const [guestAttendCounts, setGuestAttendCounts] = useState<Map<string, number>>(new Map());
   const [promoteGuest, setPromoteGuest] = useState<Guest | null>(null);
@@ -200,11 +200,11 @@ export default function Roster() {
 
   async function removeGuest(g: Guest) {
     if (!isAdmin) return;
-    if (!confirm(`'${g.name}' 손님을 삭제하시겠습니까?\n\u00b7 출석 이력도 함께 삭제됩니다`)) return;
+    if (!confirm(`'${g.name}' 새친구를 삭제하시겠습니까?\n\u00b7 출석 이력도 함께 삭제됩니다`)) return;
     const { error } = await supabase.from("guests").delete().eq("id", g.id);
     if (error) { toast.error("삭제 실패: " + error.message); return; }
     setGuests((prev) => prev.filter((x) => x.id !== g.id));
-    toast.success(`'${g.name}' 손님 삭제됨`);
+    toast.success(`'${g.name}' 새친구 삭제됨`);
   }
 
   async function remove(kind: "students" | "teachers", id: string, label: string) {
@@ -330,7 +330,7 @@ export default function Roster() {
                 }`}
               >
                 {t === "guests" && <Sparkles className="size-3.5" />}
-                {t === "students" ? `학생 (${students.length})` : t === "teachers" ? `교사 (${teachers.length})` : `초청 손님 (${guests.length})`}
+                {t === "students" ? `학생 (${students.length})` : t === "teachers" ? `교사 (${teachers.length})` : `새친구 (${guests.length})`}
               </button>
             ))}
           </div>
@@ -794,7 +794,7 @@ function TeacherTable({ rows, canWrite, onEdit, onDelete }: {
 }
 
 
-// M4-22: 친구초청 손님 테이블
+// M4-22: 친구새친구 테이블
 function GuestTable({
   rows, students, attendCounts, canWrite, onPromote, onDelete,
 }: {
@@ -868,7 +868,7 @@ function GuestTable({
       </table>
       {rows.length === 0 && (
         <div className="text-center text-muted-foreground text-sm py-12">
-          미승격 손님이 없습니다.
+          미승격 새친구이 없습니다.
         </div>
       )}
     </div>

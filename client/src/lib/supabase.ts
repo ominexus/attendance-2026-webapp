@@ -74,7 +74,7 @@ export interface AttendanceDate {
   updated_at: string;
 }
 
-// 친구초청잔치 1회성 손님
+// 친구초청잔치 1회성 새친구
 export interface Guest {
   id: string;
   name: string;
@@ -89,7 +89,7 @@ export interface Guest {
   created_at: string;
 }
 
-// 손님 출석
+// 새친구 출석
 export interface GuestAttendance {
   id: string;
   guest_id: string;

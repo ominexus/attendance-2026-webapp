@@ -55,7 +55,7 @@ export default function Home() {
   const [openNoteFor, setOpenNoteFor] = useState<string | null>(null);
   // 이력 패널
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
-  // M4-22: 손님 관리
+  // M4-22: 새친구 관리
   const [guests, setGuests] = useState<Guest[]>([]);
   const [guestAttendance, setGuestAttendance] = useState<Map<string, GuestAttendance>>(new Map());
   const [showAddGuest, setShowAddGuest] = useState(false);
@@ -112,7 +112,7 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [date]);
 
-  // M4-22: 손님 출석 도장 토글
+  // M4-22: 새친구 출석 도장 토글
   async function toggleGuestAttendance(guest: Guest) {
     if (!isAdmin) {
       toast.error("관리자 권한이 필요합니다");
@@ -139,22 +139,22 @@ export default function Home() {
         else m.delete(guest.id);
         return m;
       });
-      toast.error(`손님 체크 실패: ${error.message}`);
+      toast.error(`새친구 체크 실패: ${error.message}`);
     } else if (data) {
       setGuestAttendance((prev) => new Map(prev).set(guest.id, data as GuestAttendance));
     }
     setSavingGuest((p) => { const s = new Set(p); s.delete(guest.id); return s; });
   }
 
-  // M4-22: 손님 삭제 (admin only)
+  // M4-22: 새친구 삭제 (admin only)
   async function deleteGuest(guest: Guest) {
     if (!isAdmin) return;
-    if (!confirm(`'${guest.name}' 손님을 삭제하시겠습니까?\n\u00b7 이 손님의 출석 이력도 함께 삭제됩니다`)) return;
+    if (!confirm(`'${guest.name}' 새친구를 삭제하시겠습니까?\n\u00b7 이 새친구의 출석 이력도 함께 삭제됩니다`)) return;
     const { error } = await supabase.from("guests").delete().eq("id", guest.id);
     if (error) { toast.error("삭제 실패: " + error.message); return; }
     setGuests((prev) => prev.filter((g) => g.id !== guest.id));
     setGuestAttendance((prev) => { const m = new Map(prev); m.delete(guest.id); return m; });
-    toast.success(`'${guest.name}' 손님 삭제됨`);
+    toast.success(`'${guest.name}' 새친구 삭제됨`);
   }
 
   // M4-22: 승격 완료 콜백
@@ -162,7 +162,7 @@ export default function Home() {
     setGuests((prev) => prev.filter((g) => g.id !== promoted.id));
     setStudents((prev) => [...prev, newStudent]);
     setPromoteGuest(null);
-    // 이 날짜의 손님 출석 이력은 이미 소급 이전되어 student_id 출석으로 존재
+    // 이 날짜의 새친구 출석 이력은 이미 소급 이전되어 student_id 출석으로 존재
     const ga = guestAttendance.get(promoted.id);
     if (ga) {
       // 출석 맵에서 제거하고 새 student_id 출석으로 대체 (아래 attendance 재조회로 표시)
@@ -650,14 +650,14 @@ export default function Home() {
           </div>
         )}
 
-        {/* M4-22: 손님 섹션 (모든 주에 항상 표시) */}
+        {/* M4-22: 새친구 섹션 (모든 주에 항상 표시) */}
         {
           <section className="mt-12">
             <div className="flex items-baseline gap-3 mb-4 border-b-2 border-rose-400 pb-2">
               <Sparkles className="size-5 text-rose-600" />
-              <h2 className="font-display text-2xl italic text-rose-700">친구초청 손님</h2>
+              <h2 className="font-display text-2xl italic text-rose-700">새친구</h2>
               <span className="text-sm text-muted-foreground tabular-nums">
-                손님 {guests.length}명
+                새친구 {guests.length}명
                 {guests.filter((g) => guestAttendance.get(g.id)?.status).length > 0 && (
                   <span className="text-rose-600 ml-2">
                     출석 {guests.filter((g) => guestAttendance.get(g.id)?.status).length}
@@ -669,14 +669,14 @@ export default function Home() {
                   onClick={() => setShowAddGuest(true)}
                   className="ml-auto flex items-center gap-1 text-xs px-2.5 py-1 bg-rose-600 text-white hover:bg-rose-700 transition-colors"
                 >
-                  <UserPlus className="size-3.5" /> 손님 추가
+                  <UserPlus className="size-3.5" /> 새친구 추가
                 </button>
               )}
             </div>
 
             {guests.length === 0 ? (
               <div className="text-center text-muted-foreground text-sm py-8 border border-dashed border-foreground/15 bg-white/40">
-                아직 등록된 손님이 없습니다{isAdmin ? ". 우상단 [손님 추가] 버튼으로 시작하세요." : ""}
+                아직 등록된 새친구이 없습니다{isAdmin ? ". 우상단 [새친구 추가] 버튼으로 시작하세요." : ""}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
@@ -699,7 +699,7 @@ export default function Home() {
                       tabIndex={isAdmin ? 0 : undefined}
                     >
                       <div className="absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 bg-rose-50 text-rose-600 border border-rose-200">
-                        손님
+                        새친구
                       </div>
                       <div className="font-display text-base leading-tight mt-3">
                         {g.name}
@@ -727,7 +727,7 @@ export default function Home() {
                           type="button"
                           onClick={(e) => { e.stopPropagation(); deleteGuest(g); }}
                           className="absolute bottom-1 right-1 p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="손님 삭제"
+                          title="새친구 삭제"
                         >
                           <Trash2 className="size-3" />
                         </button>
@@ -759,7 +759,7 @@ export default function Home() {
         onPromoted={handlePromoted}
       />
 
-      {/* M4-22: 손님 추가 모달 */}
+      {/* M4-22: 새친구 추가 모달 */}
       <GuestAddModal
         open={showAddGuest}
         attendDate={date}
@@ -768,7 +768,7 @@ export default function Home() {
         onClose={() => setShowAddGuest(false)}
         onAdded={(g) => {
           setGuests((prev) => [...prev, g]);
-          // 손님 추가 시 자동 출석 체크 → guest_attendance 맵에도 반영
+          // 새친구 추가 시 자동 출석 체크 → guest_attendance 맵에도 반영
           setGuestAttendance((prev) => new Map(prev).set(g.id, {
             id: "tmp-" + g.id,
             guest_id: g.id,

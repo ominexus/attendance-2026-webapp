@@ -209,7 +209,7 @@ export default function Stats() {
     [notes, refDate],
   );
 
-  // 7) M4-22: 기준일 손님 출석 수 (주로 초청주에서만 의미 있음)
+  // 7) M4-22: 기준일 새친구 출석 수 (주로 초청주에서만 의미 있음)
   const thisWeekGuestCount = useMemo(
     () => guestAttendance.filter((ga) => ga.attend_date === refDate).length,
     [guestAttendance, refDate],
@@ -317,7 +317,7 @@ export default function Stats() {
               />
             </div>
 
-             {/* M4-22: 손님 출석 KPI - 해당 날짜 손님 출석 1명 이상일 때만 노출 */}
+             {/* M4-22: 새친구 출석 KPI - 해당 날짜 새친구 출석 1명 이상일 때만 노출 */}
             {thisWeekGuestCount > 0 && (
               <div className="mb-10 border-l-4 border-rose-400 bg-rose-50/40 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -326,15 +326,15 @@ export default function Stats() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Kpi
-                    label="손님 출석"
+                    label="새친구 출석"
                     value={`${thisWeekGuestCount}명`}
-                    sub={`정규 학생 ${thisWeekPresent}명 + 손님 ${thisWeekGuestCount}명`}
+                    sub={`정규 학생 ${thisWeekPresent}명 + 새친구 ${thisWeekGuestCount}명`}
                     highlight
                   />
                   <Kpi
                     label="전체 출석 (초청주)"
                     value={`${thisWeekPresent + thisWeekGuestCount}명`}
-                    sub="정규 + 손님 합산"
+                    sub="정규 + 새친구 합산"
                   />
                 </div>
               </div>

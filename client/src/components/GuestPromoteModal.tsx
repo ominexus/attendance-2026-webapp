@@ -1,4 +1,4 @@
-// GuestPromoteModal.tsx - 손님 → 정규 학생 승격 모달 (M4-22)
+// GuestPromoteModal.tsx - 새친구 → 정규 학생 승격 모달 (M4-22)
 // - 이름/학년/반/성별/데려온 친구(guide) 확인 → students INSERT
 // - guests.is_promoted=true, promoted_student_id=새 학생 ID
 // - guest_attendance 이력을 새 student_id의 attendance 레코드로 소급 이전
@@ -30,7 +30,7 @@ export function GuestPromoteModal({ guest, students, onClose, onPromoted }: Gues
   useEffect(() => {
     if (guest) {
       setName(guest.name);
-      // 손님이 grade/class_num을 숫자로 가지고 있다면 문자열로 변환
+      // 새친구가 grade/class_num을 숫자로 가지고 있다면 문자열로 변환
       setGrade(guest.grade ? `${guest.grade}학년` : "1학년");
       setClassNum(guest.class_num ? `${guest.class_num}반` : "1반");
       setGender(guest.gender || "");
@@ -100,7 +100,7 @@ export function GuestPromoteModal({ guest, students, onClose, onPromoted }: Gues
 
     setSaving(false);
     if (updateError) {
-      toast.warning("학생 등록 완료 / 손님 상태 갱신 실패: " + updateError.message);
+      toast.warning("학생 등록 완료 / 새친구 상태 갱신 실패: " + updateError.message);
     }
 
     onPromoted({ ...guest, is_promoted: true, promoted_student_id: (newStudent as Student).id }, newStudent as Student);
@@ -125,7 +125,7 @@ export function GuestPromoteModal({ guest, students, onClose, onPromoted }: Gues
 
         <div className="p-5 space-y-4">
           <p className="text-xs text-muted-foreground">
-            이 손님을 정규 학생으로 등록합니다. 등록 시 손님 출석 이력이 새 학생으로 소급 이전됩니다.
+            이 새친구를 정규 학생으로 등록합니다. 등록 시 새친구 출석 이력이 새 학생으로 소급 이전됩니다.
           </p>
 
           {/* 이름 */}

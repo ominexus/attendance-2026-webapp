@@ -1,4 +1,4 @@
-// GuestAddModal.tsx - 친구초청 손님 추가 모달 (M4-22)
+// GuestAddModal.tsx - 새친구 추가 모달 (M4-22)
 // - 이름 (필수), 데려온 학생 (옵션), 성별/학년/반 (옵션)
 // - guests INSERT + guest_attendance INSERT (자동 출석 체크)
 // - Devotional Editorial 톤
@@ -58,7 +58,7 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
 
     if (error || !newGuest) {
       setSaving(false);
-      toast.error("손님 추가 실패: " + (error?.message || "unknown"));
+      toast.error("새친구 추가 실패: " + (error?.message || "unknown"));
       return;
     }
 
@@ -68,12 +68,12 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
         .from("guest_attendance")
         .insert({ guest_id: (newGuest as Guest).id, attend_date: attendDate, status: true });
       if (gaError) {
-        toast.warning("손님 등록 완료 / 출석 체크 실패: " + gaError.message);
+        toast.warning("새친구 등록 완료 / 출석 체크 실패: " + gaError.message);
       }
     }
 
     setSaving(false);
-    toast.success(`'${name.trim()}' 손님 추가됨`);
+    toast.success(`'${name.trim()}' 새친구 추가됨`);
     reset();
     onAdded(newGuest as Guest);
   }
@@ -87,7 +87,7 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
         <div className="flex items-center justify-between px-5 py-3 border-b border-foreground/10 bg-rose-50/40">
           <div className="flex items-center gap-2">
             <UserPlus className="size-4 text-rose-600" />
-            <h2 className="font-display text-lg italic text-[oklch(0.32_0.05_250)]">초청 손님 추가</h2>
+            <h2 className="font-display text-lg italic text-[oklch(0.32_0.05_250)]">새친구 추가</h2>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="size-4" />
@@ -95,7 +95,7 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-xs text-muted-foreground">{attendDate} 손님을 추가합니다. 이름만 필수, 나머지는 선택입니다.</p>
+          <p className="text-xs text-muted-foreground">{attendDate} 새친구를 추가합니다. 이름만 필수, 나머지는 선택입니다.</p>
 
           {/* 이름 */}
           <div>
@@ -104,7 +104,7 @@ export function GuestAddModal({ open, attendDate, students, autoCheckAttendance,
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="손님 이름"
+              placeholder="새친구 이름"
               className="w-full text-sm px-2 py-1.5 border border-foreground/20 bg-white focus:outline-none focus:border-[oklch(0.32_0.05_250)]"
             />
           </div>
