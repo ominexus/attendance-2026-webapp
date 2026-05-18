@@ -10,6 +10,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { shouldFetchAttendanceDates } from "@/lib/selectedDateAuth";
 
 // ── 헬퍼 ──────────────────────────────────────────────────
 /** YYYY-MM-DD → 로컬 Date 객체 (UTC 파싱 문제 방지: new Date("YYYY-MM-DD")는 UTC 자정으로 해석됨) */
@@ -121,7 +122,7 @@ interface SelectedDateContextValue {
 const SelectedDateContext = createContext<SelectedDateContextValue | undefined>(undefined);
 
 export function SelectedDateProvider({ children }: { children: ReactNode }) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, loading: authLoading } = useAuth();
 
   const [selectedDate, _setSelectedDate] = useState<string>(() => resolveInitialDate());
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -133,6 +134,11 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
   // - 비admin: is_active=true, attendance_date <= today
   // - admin: is_active=true, attendance_date <= today+60일 (미래 예정 포함)
   useEffect(() => {
+    if (!shouldFetchAttendanceDates(authLoading)) {
+      setDatesLoading(true);
+      return;
+    }
+
     let cancelled = false;
     setDatesLoading(true);
     const today = todayLocal();
@@ -197,7 +203,7 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
       setDatesLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [fetchTick, isAdmin]);
+  }, [fetchTick, isAdmin, authLoading]);
 
   const refreshDates = useCallback(() => setFetchTick((t) => t + 1), []);
 
