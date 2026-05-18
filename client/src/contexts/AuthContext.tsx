@@ -6,6 +6,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { syncStoredSession } from "@/lib/authSession";
 
 export interface Profile {
   id: string;
@@ -41,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   // 초기화 완료 여부 추적 (INITIAL_SESSION 이벤트가 한 번만 loading=false 처리)
   const initializedRef = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const lastSyncAtRef = useRef(0);
 
   const loadProfile = useCallback(async (userId: string | null) => {
     if (!userId) {
@@ -65,6 +68,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const markInitialized = useCallback(() => {
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      setLoading(false);
+    }
+  }, []);
+
+  const syncSessionFromStorage = useCallback(async () => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    try {
+      await syncStoredSession<Profile>({
+        getSession: () => supabase.auth.getSession(),
+        loadProfile: async (userId) => loadProfile(userId),
+        setSession,
+        setProfile,
+      });
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, [loadProfile]);
+
   useEffect(() => {
     // onAuthStateChange 단일 경로로 초기화
     // - INITIAL_SESSION: 새로고침/첫 마운트 시 발화 → loading=false 처리
@@ -80,21 +105,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
         }
 
-        // 최초 이벤트(INITIAL_SESSION)에서만 loading 해제
-        // 이후 이벤트(SIGNED_IN 등)에서는 이미 false이므로 중복 set 무해
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          setLoading(false);
-        }
+        markInitialized();
       }
     );
+
+    void syncSessionFromStorage().finally(markInitialized);
 
     // Supabase SDK가 INITIAL_SESSION을 발화하지 않는 엣지 케이스 대비
     // (예: 네트워크 오류, 토큰 만료 즉시 감지) — 3초 타임아웃 폴백
     const fallbackTimer = setTimeout(() => {
       if (!initializedRef.current) {
-        initializedRef.current = true;
-        setLoading(false);
+        markInitialized();
       }
     }, 3000);
 
@@ -102,7 +123,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       clearTimeout(fallbackTimer);
     };
-  }, [loadProfile]);
+  }, [loadProfile, markInitialized, syncSessionFromStorage]);
+
+  useEffect(() => {
+    const syncWhenVisible = () => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+
+      const now = Date.now();
+      if (now - lastSyncAtRef.current < 5000) return;
+      lastSyncAtRef.current = now;
+
+      void syncSessionFromStorage();
+    };
+
+    window.addEventListener("focus", syncWhenVisible);
+    window.addEventListener("pageshow", syncWhenVisible);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+
+    return () => {
+      window.removeEventListener("focus", syncWhenVisible);
+      window.removeEventListener("pageshow", syncWhenVisible);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [syncSessionFromStorage]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
