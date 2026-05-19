@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { StudentHistoryPanel } from "@/components/StudentHistoryPanel";
 import { GuestPromoteModal } from "@/components/GuestPromoteModal";
 import { GuestAddModal } from "@/components/GuestAddModal";
+import { loadHomeAttendanceData } from "@/lib/homeAttendanceLoader";
 
 function normalizeGender(g: string | null): "남" | "여" | "미지정" {
   if (!g) return "미지정";
@@ -82,32 +83,26 @@ export default function Home() {
     let cancelled = false;
     setFetching(true);
     (async () => {
-      const [attRes, noteRes, guestRes, gAttRes] = await Promise.all([
-        supabase.from("attendance").select("*").eq("attendance_date", date),
-        supabase.from("absence_notes").select("*").eq("attend_date", date),
-        supabase.from("guests").select("*").eq("is_promoted", false).order("created_at", { ascending: true }),
-        supabase.from("guest_attendance").select("*").eq("attend_date", date),
-      ]);
-      if (cancelled) return;
-      if (attRes.error) toast.error("출석 로드 실패: " + attRes.error.message);
-      else {
-        const m = new Map<string, Attendance>();
-        for (const a of (attRes.data as Attendance[]) ?? []) m.set(a.student_id, a);
-        setAttendance(m);
+      try {
+        const result = await loadHomeAttendanceData(date, {
+          attendance: () => supabase.from("attendance").select("*").eq("attendance_date", date),
+          notes: () => supabase.from("absence_notes").select("*").eq("attend_date", date),
+          guests: () => supabase.from("guests").select("*").eq("is_promoted", false).order("created_at", { ascending: true }),
+          guestAttendance: () => supabase.from("guest_attendance").select("*").eq("attend_date", date),
+        });
+
+        if (cancelled) return;
+        setAttendance(result.attendance);
+        setNotes(result.notes);
+        setGuests(result.guests);
+        setGuestAttendance(result.guestAttendance);
+
+        for (const error of result.errors) {
+          toast.error(`${error.label} 로드 실패: ${error.message}`);
+        }
+      } finally {
+        if (!cancelled) setFetching(false);
       }
-      if (noteRes.error) toast.error("메모 로드 실패: " + noteRes.error.message);
-      else {
-        const nm = new Map<string, AbsenceNote>();
-        for (const n of (noteRes.data as AbsenceNote[]) ?? []) nm.set(n.student_id, n);
-        setNotes(nm);
-      }
-      if (!guestRes.error) setGuests((guestRes.data as Guest[]) ?? []);
-      if (!gAttRes.error) {
-        const gm = new Map<string, GuestAttendance>();
-        for (const ga of (gAttRes.data as GuestAttendance[]) ?? []) gm.set(ga.guest_id, ga);
-        setGuestAttendance(gm);
-      }
-      setFetching(false);
     })();
     return () => { cancelled = true; };
   }, [date]);
