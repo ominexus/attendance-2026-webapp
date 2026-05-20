@@ -40,14 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  // 초기화 완료 여부 추적 (INITIAL_SESSION 이벤트가 한 번만 loading=false 처리)
   const initializedRef = useRef(false);
-  const syncInFlightRef = useRef(false);
-  const lastSyncAtRef = useRef(0);
 
   const loadProfile = useCallback(async (userId: string | null) => {
     if (!userId) {
-      console.log("[Auth] No userId provided to loadProfile");
       setProfile(null);
       return;
     }
@@ -62,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn("[Auth] Profile load error:", error.message);
         setProfile(null);
       } else {
-        console.log("[Auth] Profile found:", data?.role);
+        console.log("[Auth] Profile loaded:", data?.role);
         setProfile(data as Profile | null);
       }
     } catch (err) {
@@ -71,74 +67,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const markInitialized = useCallback(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      setLoading(false);
-    }
-  }, []);
-
-  const syncSessionFromStorage = useCallback(async () => {
-    if (syncInFlightRef.current) return;
-    syncInFlightRef.current = true;
-    try {
-      await syncStoredSession<Profile>({
-        getSession: () => supabase.auth.getSession(),
-        loadProfile: async (userId) => loadProfile(userId),
-        setSession,
-        setProfile,
-      });
-    } finally {
-      syncInFlightRef.current = false;
-    }
-  }, [loadProfile]);
-
   useEffect(() => {
-    console.log("[Auth] Setting up onAuthStateChange listener...");
-    // onAuthStateChange 단일 경로로 초기화
+    console.log("[Auth] Subscribing to onAuthStateChange...");
+    
+    // INITIAL_SESSION 이벤트를 포함한 모든 상태 변경 감지
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log(`[Auth] Event: ${event}, Session: ${newSession ? "Present" : "None"}`);
         setSession(newSession);
 
         if (newSession?.user.id) {
-          console.log("[Auth] Loading profile for user:", newSession.user.id);
           await loadProfile(newSession.user.id);
-          console.log("[Auth] Profile loaded");
         } else {
           setProfile(null);
         }
 
-        markInitialized();
+        if (!initializedRef.current) {
+          console.log("[Auth] First meaningful state resolved");
+          initializedRef.current = true;
+          setLoading(false);
+        }
       }
     );
 
-    console.log("[Auth] Running initial session sync...");
-    syncSessionFromStorage()
-      .then((result) => {
-        console.log("[Auth] Initial sync result:", result);
-      })
-      .catch((err) => {
-        console.error("[Auth] Initial sync error:", err);
-      })
-      .finally(() => {
-        console.log("[Auth] Initial sync finally - marking initialized");
-        markInitialized();
-      });
-
-    // Supabase SDK가 INITIAL_SESSION을 발화하지 않는 엣지 케이스 대비
-    const fallbackTimer = setTimeout(() => {
+    // 5초 후에도 초기화가 안 되면 강제 해제 (최후의 수단)
+    const timer = setTimeout(() => {
       if (!initializedRef.current) {
-        console.warn("[Auth] Initialization fallback timer fired (3s)");
-        markInitialized();
+        console.warn("[Auth] Initialization timed out - force clearing loader");
+        initializedRef.current = true;
+        setLoading(false);
       }
-    }, 3000);
+    }, 5000);
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(fallbackTimer);
+      clearTimeout(timer);
     };
-  }, [loadProfile, markInitialized, syncSessionFromStorage]);
+  }, [loadProfile]);
 
   useEffect(() => {
     const syncWhenVisible = () => {

@@ -54,14 +54,12 @@ export async function loadHomeAttendanceData(
   _date: string,
   queries: HomeAttendanceQueries,
 ): Promise<HomeAttendanceLoadResult> {
-  // Use sequential queries instead of Promise.all to avoid potential race conditions
-  // in browser extensions or environment listeners (e.g. "message channel closed" errors).
-  const attRes = await runQuery("출석", queries.attendance);
-  const noteRes = await runQuery("메모", queries.notes);
-  const guestRes = await runQuery("새친구", queries.guests);
-  const gAttRes = await runQuery("새친구 출석", queries.guestAttendance);
-
-  const [res1, res2, res3, res4] = [attRes, noteRes, guestRes, gAttRes];
+  const [attRes, noteRes, guestRes, gAttRes] = await Promise.all([
+    runQuery("출석", queries.attendance),
+    runQuery("메모", queries.notes),
+    runQuery("새친구", queries.guests),
+    runQuery("새친구 출석", queries.guestAttendance),
+  ]);
 
   const attendance = new Map<string, Attendance>();
   for (const a of attRes.data) attendance.set(a.student_id, a);
