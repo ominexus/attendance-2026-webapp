@@ -105,28 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [loadProfile]);
 
-  useEffect(() => {
-    const syncWhenVisible = () => {
-      if (document.visibilityState && document.visibilityState !== "visible") return;
-
-      const now = Date.now();
-      if (now - lastSyncAtRef.current < 5000) return;
-      lastSyncAtRef.current = now;
-
-      void syncSessionFromStorage();
-    };
-
-    window.addEventListener("focus", syncWhenVisible);
-    window.addEventListener("pageshow", syncWhenVisible);
-    document.addEventListener("visibilitychange", syncWhenVisible);
-
-    return () => {
-      window.removeEventListener("focus", syncWhenVisible);
-      window.removeEventListener("pageshow", syncWhenVisible);
-      document.removeEventListener("visibilitychange", syncWhenVisible);
-    };
-  }, [syncSessionFromStorage]);
-
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error: error?.message ?? null };
