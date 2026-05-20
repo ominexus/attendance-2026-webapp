@@ -66,15 +66,28 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("students")
-        .select("*")
-        .order("grade")
-        .order("class_num")
-        .order("name");
-      if (cancelled) return;
-      if (error) toast.error("학생 명단 로드 실패: " + error.message);
-      else setStudents((data as Student[]) ?? []);
+      console.log("[Home] Fetching students...");
+      try {
+        const { data, error } = await supabase
+          .from("students")
+          .select("*")
+          .order("grade")
+          .order("class_num")
+          .order("name");
+        
+        if (cancelled) return;
+        if (error) {
+          console.error("[Home] Student fetch error:", error);
+          toast.error("학생 명단 로드 실패: " + error.message);
+        } else {
+          const studentList = (data as Student[]) ?? [];
+          console.log(`[Home] Loaded ${studentList.length} students`);
+          setStudents(studentList);
+        }
+      } catch (err) {
+        console.error("[Home] Student fetch exception:", err);
+        toast.error("학생 명단 로드 중 예외 발생");
+      }
     })();
     return () => { cancelled = true; };
   }, []);
