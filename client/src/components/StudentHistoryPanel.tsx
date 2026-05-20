@@ -33,6 +33,8 @@ interface EditableFields {
   class_num: string;
   gender: string;
   guide: string;
+  school: string;
+  phone: string;
   is_active: boolean;
 }
 
@@ -140,6 +142,8 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
       class_num: student.class_num ?? "1반",
       gender: student.gender ?? "",
       guide: student.guide ?? "",
+      school: student.school ?? "",
+      phone: student.phone ?? "",
       is_active: student.is_active ?? true,
     });
     setIsEditing(true);
@@ -171,6 +175,8 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
       class_num: editFields.class_num,
       gender: editFields.gender,
       guide: editFields.guide.trim() || null,
+      school: editFields.school.trim() || null,
+      phone: editFields.phone.trim() || null,
       is_active: editFields.is_active,
     };
     onStudentUpdate?.(updated);
@@ -181,6 +187,8 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
       class_num: updated.class_num,
       gender: updated.gender,
       guide: updated.guide,
+      school: updated.school,
+      phone: updated.phone,
       is_active: updated.is_active,
     }).eq("id", student.id);
 
@@ -319,6 +327,12 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
                   {displayStudent.guide && (
                     <span className="text-xs text-muted-foreground">데려온 친구: {displayStudent.guide}</span>
                   )}
+                  {displayStudent.school && (
+                    <span className="text-xs text-muted-foreground">학교: {displayStudent.school}</span>
+                  )}
+                  {displayStudent.phone && (
+                    <span className="text-xs text-muted-foreground">전화: {displayStudent.phone}</span>
+                  )}
                   {/* 활동 상태 배지 + admin 토글 (편집 모드 아닐 때만) */}
                   {!isEditing && (
                     isAdmin ? (
@@ -438,6 +452,28 @@ export function StudentHistoryPanel({ student, onClose, onStudentUpdate }: Props
                           value={editFields.guide}
                           onChange={(e) => setEditFields((f) => f && { ...f, guide: e.target.value })}
                           placeholder="이름 입력"
+                          className="h-8 text-sm border-foreground/20 rounded-none focus-visible:ring-0 focus-visible:border-[oklch(0.32_0.05_250)]"
+                        />
+                      </div>
+
+                      {/* 학교 */}
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">학교</label>
+                        <Input
+                          value={editFields.school}
+                          onChange={(e) => setEditFields((f) => f && { ...f, school: e.target.value })}
+                          placeholder="학교명 입력"
+                          className="h-8 text-sm border-foreground/20 rounded-none focus-visible:ring-0 focus-visible:border-[oklch(0.32_0.05_250)]"
+                        />
+                      </div>
+
+                      {/* 전화번호 */}
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">전화번호</label>
+                        <Input
+                          value={editFields.phone}
+                          onChange={(e) => setEditFields((f) => f && { ...f, phone: e.target.value })}
+                          placeholder="010-0000-0000"
                           className="h-8 text-sm border-foreground/20 rounded-none focus-visible:ring-0 focus-visible:border-[oklch(0.32_0.05_250)]"
                         />
                       </div>
