@@ -424,6 +424,20 @@ update public.profiles set role='admin' where email='admin@example.com';
 
 ---
 
+## Troubleshooting & Environment
+
+### 데이터 로딩 문제 (Message Channel Closed)
+브라우저 확장 프로그램이나 특정 네트워크 환경에서 `Promise.all`을 이용한 병렬 데이터 요청이 간섭을 받아 `message channel closed` 에러가 발생하며 데이터가 로드되지 않는 경우가 있습니다.
+- **해결책**: `homeAttendanceLoader.ts`에서 데이터를 순차적으로 요청하도록 변경하여 안정성을 확보했습니다.
+- **상태 초기화 간섭**: 새로고침 시 상태를 초기화하는 `resetBrowserStateOnReload` 기능이 앱 초기화와 충돌할 가능성이 있어 현재 `main.tsx`에서 일시적으로 비활성화된 상태입니다.
+
+### 한글 인코딩 깨짐 현상
+특정 에디터나 환경에서 파일 저장 시 UTF-8 인코딩이 손상되어 한글 레이블(`출석`, `메모` 등)이 깨지는 현상이 발생할 수 있습니다.
+- **조치**: 모든 주요 소스 파일(`Home.tsx`, `homeAttendanceLoader.ts` 등)은 **UTF-8 (BOM 없음)** 인코딩을 유지해야 합니다.
+- **복구**: 깨진 문자열은 수동으로 복구되었으며, `git checkout` 또는 강제 재작성을 통해 인코딩을 교정할 수 있습니다.
+
+---
+
 ## 다음 단계 (마일스톤 4-4 이후)
 
 - 주간 출석 마감 알림 (Edge Function + Push)
