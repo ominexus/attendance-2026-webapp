@@ -40,7 +40,7 @@ interface ClassGroup {
 }
 
 export default function Home() {
-  const { isAdmin, user, profile } = useAuth();
+  const { isAdmin, user, profile, loading: authLoading } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [notes, setNotes] = useState<Map<string, AbsenceNote>>(new Map());
