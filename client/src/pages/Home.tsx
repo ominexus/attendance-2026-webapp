@@ -66,6 +66,17 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      console.log("[Home] Effect mount. Auth state:", { 
+        isAdmin, 
+        userId: user?.id, 
+        hasProfile: !!profile,
+        authLoading
+      });
+
+      // Give auth a moment to settle if needed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (cancelled) return;
+
       console.log("[Home] Fetching students...");
       try {
         const { data, error } = await supabase
@@ -90,7 +101,7 @@ export default function Home() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isAdmin, user?.id, profile, authLoading]); // Added dependencies to re-run if auth state changes significantly during mount
 
   useEffect(() => {
     let cancelled = false;

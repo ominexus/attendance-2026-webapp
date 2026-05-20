@@ -155,6 +155,7 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
     })();
 
     (async () => {
+      console.log("[SelectedDate] Fetching attendance dates... isAdmin:", isAdmin);
       const { data, error } = await supabase
         .from("attendance_dates")
         .select("attendance_date, service_type, label, is_default_sunday, is_active")
@@ -164,7 +165,10 @@ export function SelectedDateProvider({ children }: { children: ReactNode }) {
         .order("attendance_date", { ascending: false });
 
       if (cancelled) return;
-      if (!error && data) {
+      if (error) {
+        console.error("[SelectedDate] Fetch error:", error);
+      } else if (data) {
+        console.log(`[SelectedDate] Loaded ${data.length} dates`);
         const entries = (data as AttendanceDateEntry[]).map((e) => ({
           ...e,
           isFuture: e.attendance_date > today,

@@ -35,10 +35,17 @@ async function runQuery<T>(
   label: string,
   query: () => PromiseLike<QueryResult<T>>,
 ): Promise<{ label: string; data: T[]; error: string | null }> {
+  console.log(`[Loader] Starting query: ${label}`);
   try {
     const { data, error } = await query();
+    if (error) {
+      console.warn(`[Loader] Query error [${label}]:`, error.message);
+    } else {
+      console.log(`[Loader] Query success [${label}]: ${data?.length ?? 0} items`);
+    }
     return { label, data: data ?? [], error: error?.message ?? null };
   } catch (err) {
+    console.error(`[Loader] Query exception [${label}]:`, err);
     return { label, data: [], error: errorMessage(err) };
   }
 }

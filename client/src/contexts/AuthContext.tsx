@@ -47,9 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = useCallback(async (userId: string | null) => {
     if (!userId) {
+      console.log("[Auth] No userId provided to loadProfile");
       setProfile(null);
       return;
     }
+    console.log("[Auth] Fetching profile for:", userId);
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -57,13 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq("id", userId)
         .maybeSingle();
       if (error) {
-        console.warn("profile load error", error.message);
+        console.warn("[Auth] Profile load error:", error.message);
         setProfile(null);
       } else {
+        console.log("[Auth] Profile found:", data?.role);
         setProfile(data as Profile | null);
       }
     } catch (err) {
-      console.warn("profile load exception", err);
+      console.warn("[Auth] Profile load exception:", err);
       setProfile(null);
     }
   }, []);
@@ -91,16 +94,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   useEffect(() => {
+    console.log("[Auth] Setting up onAuthStateChange listener...");
     // onAuthStateChange 단일 경로로 초기화
-    // - INITIAL_SESSION: 새로고침/첫 마운트 시 발화 → loading=false 처리
-    // - SIGNED_IN / TOKEN_REFRESHED: 로그인 후 발화
-    // - SIGNED_OUT: 로그아웃 후 발화
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
+        console.log(`[Auth] Event: ${event}, Session: ${newSession ? "Present" : "None"}`);
         setSession(newSession);
 
         if (newSession?.user.id) {
+          console.log("[Auth] Loading profile for user:", newSession.user.id);
           await loadProfile(newSession.user.id);
+          console.log("[Auth] Profile loaded");
         } else {
           setProfile(null);
         }
@@ -109,12 +113,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    void syncSessionFromStorage().finally(markInitialized);
+    console.log("[Auth] Running initial session sync...");
+    syncSessionFromStorage()
+      .then((result) => {
+        console.log("[Auth] Initial sync result:", result);
+      })
+      .catch((err) => {
+        console.error("[Auth] Initial sync error:", err);
+      })
+      .finally(() => {
+        console.log("[Auth] Initial sync finally - marking initialized");
+        markInitialized();
+      });
 
     // Supabase SDK가 INITIAL_SESSION을 발화하지 않는 엣지 케이스 대비
-    // (예: 네트워크 오류, 토큰 만료 즉시 감지) — 3초 타임아웃 폴백
     const fallbackTimer = setTimeout(() => {
       if (!initializedRef.current) {
+        console.warn("[Auth] Initialization fallback timer fired (3s)");
         markInitialized();
       }
     }, 3000);
