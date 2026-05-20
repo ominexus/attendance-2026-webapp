@@ -70,27 +70,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     console.log("[Auth] Subscribing to onAuthStateChange...");
     
-    // INITIAL_SESSION 이벤트를 포함한 모든 상태 변경 감지
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
+      (event, newSession) => {
         console.log(`[Auth] Event: ${event}, Session: ${newSession ? "Present" : "None"}`);
         setSession(newSession);
 
-        if (newSession?.user.id) {
-          await loadProfile(newSession.user.id);
-        } else {
-          setProfile(null);
-        }
-
+        // onAuthStateChange 콜백 내부에서 await를 하지 않음으로써
+        // Supabase 내부 이벤트 루프가 차단되는 것을 방지
         if (!initializedRef.current) {
-          console.log("[Auth] First meaningful state resolved");
+          console.log("[Auth] State transition complete - unlocking app");
           initializedRef.current = true;
           setLoading(false);
         }
       }
     );
 
-    // 5초 후에도 초기화가 안 되면 강제 해제 (최후의 수단)
     const timer = setTimeout(() => {
       if (!initializedRef.current) {
         console.warn("[Auth] Initialization timed out - force clearing loader");
@@ -103,7 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       clearTimeout(timer);
     };
-  }, [loadProfile]);
+  }, []);
+
+  // 세션 변경 시 프로필 로드 (별도 Effect로 분리)
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (userId) {
+      console.log("[Auth] Session detected, triggering profile load...");
+      void loadProfile(userId);
+    } else {
+      setProfile(null);
+    }
+  }, [session?.user.id, loadProfile]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

@@ -104,10 +104,13 @@ export default function Home() {
   }, [isAdmin, user?.id, profile, authLoading]); // Added dependencies to re-run if auth state changes significantly during mount
 
   useEffect(() => {
+    if (authLoading) return; // 인증 초기화 대기
+
     let cancelled = false;
     setFetching(true);
     (async () => {
       try {
+        console.log("[Home] Starting data fetch with date:", date);
         const result = await loadHomeAttendanceData(date, {
           attendance: () => supabase.from("attendance").select("*").eq("attendance_date", date),
           notes: () => supabase.from("absence_notes").select("*").eq("attend_date", date),
@@ -129,7 +132,7 @@ export default function Home() {
       }
     })();
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, authLoading]); // authLoading 의존성 추가
 
   // M4-22: 새친구 출석 도장 토글
   async function toggleGuestAttendance(guest: Guest) {
