@@ -62,30 +62,63 @@ export default function Stats() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    (async () => {
-      const [sRes, aRes, nRes, gaRes] = await Promise.all([
-        supabase.from("students").select("*").eq("is_active", true),
-        supabase.from("attendance").select("*").eq("status", true),
-        supabase
-          .from("absence_notes")
+
+    async function fetchAllPresentAttendance() {
+      const all: Attendance[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from("attendance")
           .select("*")
-          .order("attend_date", { ascending: false })
-          .order("updated_at", { ascending: false })
-          .limit(50),
-        supabase.from("guest_attendance").select("*").eq("status", true),
-      ]);
-      if (cancelled) return;
-      if (sRes.error || aRes.error || nRes.error) {
-        toast.error("데이터 로드 실패");
-      } else {
-        setStudents((sRes.data as Student[]) ?? []);
-        setAttendance((aRes.data as Attendance[]) ?? []);
-        setNotes((nRes.data as AbsenceNote[]) ?? []);
-        if (!gaRes.error) setGuestAttendance((gaRes.data as GuestAttendance[]) ?? []);
+          .eq("status", true)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...(data as Attendance[]));
+        if (data.length < pageSize) break;
+        page++;
       }
-      setLoading(false);
+      return all;
+    }
+
+    (async () => {
+      try {
+        const [sRes, aData, nRes, gaRes] = await Promise.all([
+          supabase.from("students").select("*").eq("is_active", true),
+          fetchAllPresentAttendance(),
+          supabase
+            .from("absence_notes")
+            .select("*")
+            .order("attend_date", { ascending: false })
+            .order("updated_at", { ascending: false })
+            .limit(50),
+          supabase.from("guest_attendance").select("*").eq("status", true),
+        ]);
+
+        if (cancelled) return;
+
+        if (sRes.error || nRes.error) {
+          toast.error("데이터 로드 실패");
+        } else {
+          setStudents((sRes.data as Student[]) ?? []);
+          setAttendance(aData);
+          setNotes((nRes.data as AbsenceNote[]) ?? []);
+          if (!gaRes.error) setGuestAttendance((gaRes.data as GuestAttendance[]) ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          toast.error("데이터 로드 중 오류가 발생했습니다.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 메모 → 학생 조인 맵

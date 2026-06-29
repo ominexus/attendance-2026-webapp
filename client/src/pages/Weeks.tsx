@@ -49,14 +49,31 @@ export default function Weeks() {
       .order("attendance_date", { ascending: false });
     if (error) { toast.error("날짜 목록 로드 실패"); setLoading(false); return; }
 
-    // attendance 건수 집계
-    const { data: counts } = await supabase
-      .from("attendance")
-      .select("attendance_date")
-      .in("attendance_date", (dates || []).map((d: AttendanceDateRow) => d.attendance_date));
+    // attendance 건수 집계 (1000개 로우 한계 대응 페이지네이션)
+    const allAttendance: { attendance_date: string }[] = [];
+    try {
+      let page = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data: counts, error: countError } = await supabase
+          .from("attendance")
+          .select("attendance_date")
+          .in("attendance_date", (dates || []).map((d: AttendanceDateRow) => d.attendance_date))
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (countError) throw countError;
+        if (!counts || counts.length === 0) break;
+        allAttendance.push(...counts);
+        if (counts.length < pageSize) break;
+        page++;
+      }
+    } catch (err) {
+      console.error("Error fetching attendance counts:", err);
+      toast.error("출석 데이터 집계 중 오류 발생");
+    }
 
     const countMap = new Map<string, number>();
-    (counts || []).forEach((r: { attendance_date: string }) => {
+    allAttendance.forEach((r: { attendance_date: string }) => {
       countMap.set(r.attendance_date, (countMap.get(r.attendance_date) || 0) + 1);
     });
 
