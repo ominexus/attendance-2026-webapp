@@ -5,8 +5,8 @@
 // 마일스톤 4-12: 기준일 변경 컨트롤 + 학년별 출석 통계 섹션 추가
 import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { supabase, type Student, type Attendance, type AbsenceNote, type GuestAttendance } from "@/lib/supabase";
-import { Loader2, MessageSquare, Sparkles } from "lucide-react";
+import { supabase, type Student, type Attendance, type AbsenceNote, type GuestAttendance, type Guest } from "@/lib/supabase";
+import { Loader2, MessageSquare } from "lucide-react";
 import { DateSpinner } from "@/components/DateSpinner";
 import { useSelectedDate } from "@/contexts/SelectedDateContext";
 import { toast } from "sonner";
@@ -54,6 +54,7 @@ export default function Stats() {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [notes, setNotes] = useState<AbsenceNote[]>([]);
   const [guestAttendance, setGuestAttendance] = useState<GuestAttendance[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 기준일: SelectedDateContext와 동기화
@@ -84,7 +85,7 @@ export default function Stats() {
 
     (async () => {
       try {
-        const [sRes, aData, nRes, gaRes] = await Promise.all([
+        const [sRes, aData, nRes, gaRes, gRes] = await Promise.all([
           supabase.from("students").select("*").eq("is_active", true),
           fetchAllPresentAttendance(),
           supabase
@@ -94,6 +95,7 @@ export default function Stats() {
             .order("updated_at", { ascending: false })
             .limit(50),
           supabase.from("guest_attendance").select("*").eq("status", true),
+          supabase.from("guests").select("*"),
         ]);
 
         if (cancelled) return;
@@ -105,6 +107,7 @@ export default function Stats() {
           setAttendance(aData);
           setNotes((nRes.data as AbsenceNote[]) ?? []);
           if (!gaRes.error) setGuestAttendance((gaRes.data as GuestAttendance[]) ?? []);
+          if (!gRes.error) setGuests((gRes.data as Guest[]) ?? []);
         }
       } catch (err) {
         if (!cancelled) {
@@ -128,50 +131,121 @@ export default function Stats() {
     return m;
   }, [students]);
 
+  // 새친구 ID -> Guest 객체 맵
+  const guestMap = useMemo(() => {
+    const m = new Map<string, Guest>();
+    for (const g of guests) m.set(g.id, g);
+    return m;
+  }, [guests]);
+
   // ── 날짜 기준값 (기준일 기반) ─────────────────────────────
   const fourWeeksAgo = useMemo(() => sundayNWeeksBeforeRef(refDate, 3), [refDate]);
 
-  // ── 주차별 출석 인원 (라인 차트용) ───────────────────────
+  // ── 주차별 출석 인원 (라인 차트용, 정규 + 새친구 합계) ───────────────────────
   const weekly = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of attendance) {
-      m.set(a.attendance_date, (m.get(a.attendance_date) ?? 0) + 1);
-    }
-    return Array.from(m.entries())
-      .map(([date, count]) => ({ date: date.slice(5), count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [attendance]);
+    const dates = new Set([
+      ...attendance.map((a) => a.attendance_date),
+      ...guestAttendance.map((ga) => ga.attend_date),
+    ]);
+    return Array.from(dates)
+      .map((date) => {
+        const regular = attendance.filter((a) => a.attendance_date === date).length;
+        const guest = guestAttendance.filter((ga) => ga.attend_date === date).length;
+        return {
+          date: date.slice(5),
+          rawDate: date,
+          count: regular + guest,
+          regular,
+          guest,
+        };
+      })
+      .sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+  }, [attendance, guestAttendance]);
 
-  // ── 반별 출석 인원 (바 차트용, 절대값) ───────────────────
+  // ── 반별 출석 인원 (바 차트용, 절대값, 정규 + 새친구 합계) ───────────────────
   const classStats = useMemo(() => {
     const studentById = new Map(students.map((s) => [s.id, s] as const));
-    const classCounts = new Map<string, number>();
+    const classCounts = new Map<string, { regular: number; guest: number }>();
+
     for (const a of attendance) {
       const s = studentById.get(a.student_id);
       if (!s) continue;
       const key = `${s.grade} ${s.class_num}`;
-      classCounts.set(key, (classCounts.get(key) ?? 0) + 1);
+      if (!classCounts.has(key)) classCounts.set(key, { regular: 0, guest: 0 });
+      classCounts.get(key)!.regular += 1;
     }
+
+    for (const ga of guestAttendance) {
+      const g = guestMap.get(ga.guest_id);
+      if (!g) continue;
+      const gradeStr = g.grade ? `${g.grade}학년` : "1학년";
+      const classStr = g.class_num ? `${g.class_num}반` : "1반";
+      const key = `${gradeStr} ${classStr}`;
+      if (!classCounts.has(key)) classCounts.set(key, { regular: 0, guest: 0 });
+      classCounts.get(key)!.guest += 1;
+    }
+
     for (const s of students) {
       const key = `${s.grade} ${s.class_num}`;
-      if (!classCounts.has(key)) classCounts.set(key, 0);
+      if (!classCounts.has(key)) classCounts.set(key, { regular: 0, guest: 0 });
     }
-    return Array.from(classCounts.entries())
-      .map(([cls, count]) => ({ cls, count }))
-      .sort((a, b) => a.cls.localeCompare(b.cls));
-  }, [students, attendance]);
 
-  // ── 개인별 출석 횟수 상위 10명 ────────────────────────────
+    return Array.from(classCounts.entries())
+      .map(([cls, counts]) => ({
+        cls,
+        count: counts.regular + counts.guest,
+        regular: counts.regular,
+        guest: counts.guest,
+      }))
+      .sort((a, b) => a.cls.localeCompare(b.cls));
+  }, [students, attendance, guestAttendance, guestMap]);
+
+  // ── 개인별 출석 횟수 상위 10명 (정규 + 새친구 합계) ────────────────────────────
   const topStudents = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of attendance) m.set(a.student_id, (m.get(a.student_id) ?? 0) + 1);
+    const studentCounts = new Map<string, number>();
+    for (const a of attendance) {
+      studentCounts.set(a.student_id, (studentCounts.get(a.student_id) ?? 0) + 1);
+    }
+
+    const guestCounts = new Map<string, number>();
+    for (const ga of guestAttendance) {
+      guestCounts.set(ga.guest_id, (guestCounts.get(ga.guest_id) ?? 0) + 1);
+    }
+
     const studentById = new Map(students.map((s) => [s.id, s] as const));
-    return Array.from(m.entries())
-      .map(([id, n]) => ({ student: studentById.get(id), count: n }))
-      .filter((x) => x.student)
+
+    const studentList = Array.from(studentCounts.entries())
+      .map(([id, count]) => {
+        const s = studentById.get(id);
+        return {
+          id,
+          name: s ? s.name : "알 수 없음",
+          grade: s ? s.grade : "",
+          classNum: s ? s.class_num : "",
+          count,
+          isGuest: false,
+        };
+      })
+      .filter((x) => x.grade !== "");
+
+    const guestList = Array.from(guestCounts.entries())
+      .map(([id, count]) => {
+        const g = guestMap.get(id);
+        return {
+          id,
+          name: g ? g.name : "알 수 없음",
+          grade: g ? `${g.grade}학년` : "",
+          classNum: g ? `${g.class_num}반` : "",
+          count,
+          isGuest: true,
+        };
+      })
+      .filter((x) => x.name !== "알 수 없음");
+
+    return [...studentList, ...guestList]
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
-  }, [students, attendance]);
+  }, [students, attendance, guestAttendance, guestMap]);
 
   // ── KPI 집계 (기준일 기반) ────────────────────────────────
 
@@ -190,51 +264,85 @@ export default function Stats() {
     return students.filter((s) => !presentIds.has(s.id)).length;
   }, [attendance, students, refDate]);
 
-  // 3) 최근 4주 평균 출석 인원 (기준일 기준)
+  // 3) 최근 4주 평균 출석 인원 (기준일 기준, 정규 + 새친구 합계)
   const recentAvg = useMemo(() => {
     const recentDates = Array.from(
-      new Set(
-        attendance
+      new Set([
+        ...attendance
           .filter((a) => a.attendance_date >= fourWeeksAgo && a.attendance_date <= refDate)
           .map((a) => a.attendance_date),
-      ),
+        ...guestAttendance
+          .filter((ga) => ga.attend_date >= fourWeeksAgo && ga.attend_date <= refDate)
+          .map((ga) => ga.attend_date)
+      ])
     );
     if (recentDates.length === 0) return 0;
     const total = recentDates.reduce(
-      (sum, d) => sum + attendance.filter((a) => a.attendance_date === d).length,
+      (sum, d) => {
+        const reg = attendance.filter((a) => a.attendance_date === d).length;
+        const gst = guestAttendance.filter((ga) => ga.attend_date === d).length;
+        return sum + reg + gst;
+      },
       0,
     );
     return Math.round(total / recentDates.length);
-  }, [attendance, fourWeeksAgo, refDate]);
+  }, [attendance, guestAttendance, fourWeeksAgo, refDate]);
 
-  // 4) 신규 출석자 수 (최근 4주 내 첫 출석)
-  const newAttendees = useMemo(() => {
+  // 4) 신규 출석자 수 (최근 4주 내 첫 출석, 정규 + 새친구 합계)
+  const newAttendeesObj = useMemo(() => {
     const firstDate = new Map<string, string>();
     for (const a of attendance) {
       const cur = firstDate.get(a.student_id);
       if (!cur || a.attendance_date < cur) firstDate.set(a.student_id, a.attendance_date);
     }
-    return Array.from(firstDate.values()).filter((d) => d >= fourWeeksAgo && d <= refDate).length;
-  }, [attendance, fourWeeksAgo, refDate]);
+    const regularNewCount = Array.from(firstDate.values()).filter((d) => d >= fourWeeksAgo && d <= refDate).length;
+    const guestNewCount = guests.filter((g) => g.first_visit_date >= fourWeeksAgo && g.first_visit_date <= refDate).length;
+    return {
+      total: regularNewCount + guestNewCount,
+      regular: regularNewCount,
+      guest: guestNewCount,
+    };
+  }, [attendance, guests, fourWeeksAgo, refDate]);
 
-  // 5) 연속 출석 3주 이상 학생 수 (기준일 기준 최근 3개 날짜)
-  const streak3Plus = useMemo(() => {
+  // 5) 연속 출석 3주 이상 인원 수 (기준일 기준 최근 3개 날짜, 정규 + 새친구 합계)
+  const streak3PlusObj = useMemo(() => {
     const allDates = Array.from(
-      new Set(attendance.filter((a) => a.attendance_date <= refDate).map((a) => a.attendance_date))
+      new Set([
+        ...attendance.filter((a) => a.attendance_date <= refDate).map((a) => a.attendance_date),
+        ...guestAttendance.filter((ga) => ga.attend_date <= refDate).map((ga) => ga.attend_date)
+      ])
     ).sort();
-    if (allDates.length < 3) return 0;
+    if (allDates.length < 3) return { total: 0, regular: 0, guest: 0 };
+    const last3 = allDates.slice(-3);
+
+    // 정규 학생
     const byStudent = new Map<string, Set<string>>();
     for (const a of attendance) {
       if (!byStudent.has(a.student_id)) byStudent.set(a.student_id, new Set());
       byStudent.get(a.student_id)!.add(a.attendance_date);
     }
-    const last3 = allDates.slice(-3);
-    let count = 0;
+    let regularCount = 0;
     for (const dates of Array.from(byStudent.values())) {
-      if (last3.every((d) => dates.has(d))) count++;
+      if (last3.every((d) => dates.has(d))) regularCount++;
     }
-    return count;
-  }, [attendance, refDate]);
+
+    // 새친구
+    const byGuest = new Map<string, Set<string>>();
+    for (const ga of guestAttendance) {
+      if (!byGuest.has(ga.guest_id)) byGuest.set(ga.guest_id, new Set());
+      byGuest.get(ga.guest_id)!.add(ga.attend_date);
+    }
+    let guestCount = 0;
+    for (const dates of Array.from(byGuest.values())) {
+      if (last3.every((d) => dates.has(d))) guestCount++;
+    }
+
+    return {
+      total: regularCount + guestCount,
+      regular: regularCount,
+      guest: guestCount,
+    };
+  }, [attendance, guestAttendance, refDate]);
 
   // 6) 기준일 결석 사유 메모 건수
   const thisWeekMemoCount = useMemo(
@@ -248,46 +356,81 @@ export default function Stats() {
     [guestAttendance, refDate],
   );
 
-  // ── 학년별 통계 (기준일 기반) ─────────────────────────────
+  // ── 학년별 통계 (기준일 기반, 정규 + 새친구 합계) ─────────────────────────────
   const gradeStats = useMemo(() => {
     const grades = ["1학년", "2학년", "3학년"];
     return grades.map((grade, gi) => {
       const gradeStudents = students.filter((s) => s.grade === grade);
       const gradeIds = new Set(gradeStudents.map((s) => s.id));
 
-      // 기준일 출석
+      const gradeGuests = guests.filter((g) => `${g.grade}학년` === grade);
+      const gradeGuestIds = new Set(gradeGuests.map((g) => g.id));
+
+      // 기준일 출석 (정규)
       const presentIds = new Set(
         attendance.filter((a) => a.attendance_date === refDate && gradeIds.has(a.student_id)).map((a) => a.student_id)
       );
       const present = presentIds.size;
       const absent = present > 0 ? gradeStudents.length - present : 0;
 
+      // 기준일 출석 (새친구)
+      const presentGuestsCount = guestAttendance.filter(
+        (ga) => ga.attend_date === refDate && gradeGuestIds.has(ga.guest_id)
+      ).length;
+
       // 기준일 메모
       const memoCount = notes.filter((n) => n.attend_date === refDate && gradeIds.has(n.student_id)).length;
 
       // 최근 4주 평균
-      const recentDates = Array.from(new Set(
-        attendance.filter((a) => a.attendance_date >= fourWeeksAgo && a.attendance_date <= refDate && gradeIds.has(a.student_id)).map((a) => a.attendance_date)
-      ));
+      const recentDates = Array.from(new Set([
+        ...attendance.filter((a) => a.attendance_date >= fourWeeksAgo && a.attendance_date <= refDate && gradeIds.has(a.student_id)).map((a) => a.attendance_date),
+        ...guestAttendance.filter((ga) => ga.attend_date >= fourWeeksAgo && ga.attend_date <= refDate && gradeGuestIds.has(ga.guest_id)).map((ga) => ga.attend_date)
+      ]));
       const avg4w = recentDates.length === 0 ? 0 : Math.round(
-        recentDates.reduce((sum, d) => sum + attendance.filter((a) => a.attendance_date === d && gradeIds.has(a.student_id)).length, 0) / recentDates.length
+        recentDates.reduce((sum, d) => {
+          const reg = attendance.filter((a) => a.attendance_date === d && gradeIds.has(a.student_id)).length;
+          const gst = guestAttendance.filter((ga) => ga.attend_date === d && gradeGuestIds.has(ga.guest_id)).length;
+          return sum + reg + gst;
+        }, 0) / recentDates.length
       );
 
       // 연속 3주 이상
-      const allGradeDates = Array.from(new Set(
-        attendance.filter((a) => a.attendance_date <= refDate && gradeIds.has(a.student_id)).map((a) => a.attendance_date)
-      )).sort();
+      const allGradeDates = Array.from(new Set([
+        ...attendance.filter((a) => a.attendance_date <= refDate && gradeIds.has(a.student_id)).map((a) => a.attendance_date),
+        ...guestAttendance.filter((ga) => ga.attend_date <= refDate && gradeGuestIds.has(ga.guest_id)).map((ga) => ga.attend_date)
+      ])).sort();
       const last3 = allGradeDates.slice(-3);
+
+      // 정규 학생 연속
       const byStudent = new Map<string, Set<string>>();
       for (const a of attendance.filter((a) => gradeIds.has(a.student_id))) {
         if (!byStudent.has(a.student_id)) byStudent.set(a.student_id, new Set());
         byStudent.get(a.student_id)!.add(a.attendance_date);
       }
-      const streak3 = last3.length < 3 ? 0 : Array.from(byStudent.values()).filter((ds) => last3.every((d) => ds.has(d))).length;
+      const studentStreak = last3.length < 3 ? 0 : Array.from(byStudent.values()).filter((ds) => last3.every((d) => ds.has(d))).length;
 
-      return { grade, present, absent, memoCount, avg4w, streak3, color: GRADE_COLORS[gi], total: gradeStudents.length };
+      // 새친구 연속
+      const byGuest = new Map<string, Set<string>>();
+      for (const ga of guestAttendance.filter((ga) => gradeGuestIds.has(ga.guest_id))) {
+        if (!byGuest.has(ga.guest_id)) byGuest.set(ga.guest_id, new Set());
+        byGuest.get(ga.guest_id)!.add(ga.attend_date);
+      }
+      const guestStreak = last3.length < 3 ? 0 : Array.from(byGuest.values()).filter((ds) => last3.every((d) => ds.has(d))).length;
+
+      return {
+        grade,
+        presentTotal: present + presentGuestsCount,
+        presentRegular: present,
+        presentGuest: presentGuestsCount,
+        absent,
+        memoCount,
+        avg4w,
+        streak3: studentStreak + guestStreak,
+        color: GRADE_COLORS[gi],
+        total: gradeStudents.length,
+      };
     });
-  }, [students, attendance, notes, refDate, fourWeeksAgo]);
+  }, [students, attendance, notes, refDate, fourWeeksAgo, guests, guestAttendance]);
 
 
   return (
@@ -318,8 +461,8 @@ export default function Stats() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-10">
               <Kpi
                 label="기준일 출석"
-                value={`${thisWeekPresent}명`}
-                sub={refDate}
+                value={`${thisWeekPresent + thisWeekGuestCount}명`}
+                sub={`정규 ${thisWeekPresent}명 + 새친구 ${thisWeekGuestCount}명`}
                 highlight
               />
               <Kpi
@@ -335,13 +478,13 @@ export default function Stats() {
               />
               <Kpi
                 label="신규 출석자"
-                value={`${newAttendees}명`}
-                sub="최근 4주 내 첫 출석"
+                value={`${newAttendeesObj.total}명`}
+                sub={`정규 ${newAttendeesObj.regular}명 + 새친구 ${newAttendeesObj.guest}명`}
               />
               <Kpi
                 label="연속 3주 이상"
-                value={`${streak3Plus}명`}
-                sub="최근 3주 연속 출석"
+                value={`${streak3PlusObj.total}명`}
+                sub={`정규 ${streak3PlusObj.regular}명 + 새친구 ${streak3PlusObj.guest}명`}
               />
               <Kpi
                 label="기준일 메모"
@@ -350,28 +493,7 @@ export default function Stats() {
               />
             </div>
 
-             {/* M4-22: 새친구 출석 KPI - 해당 날짜 새친구 출석 1명 이상일 때만 노출 */}
-            {thisWeekGuestCount > 0 && (
-              <div className="mb-10 border-l-4 border-rose-400 bg-rose-50/40 px-4 py-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="size-4 text-rose-600" />
-                  <span className="text-[10px] uppercase tracking-[0.25em] text-rose-700 font-medium">Friend Invitation Week</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <Kpi
-                    label="새친구 출석"
-                    value={`${thisWeekGuestCount}명`}
-                    sub={`정규 학생 ${thisWeekPresent}명 + 새친구 ${thisWeekGuestCount}명`}
-                    highlight
-                  />
-                  <Kpi
-                    label="전체 출석 (초청주)"
-                    value={`${thisWeekPresent + thisWeekGuestCount}명`}
-                    sub="정규 + 새친구 합산"
-                  />
-                </div>
-              </div>
-            )}
+
 
             {/* 학년별 통계 */}
             <Section title="By Grade" subtitle="학년별 출석 현황">
@@ -390,7 +512,11 @@ export default function Stats() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2.5">
-                      <GradeKpi label="기준일 출석" value={g.present > 0 ? `${g.present}명` : "—"} color={g.color} />
+                      <GradeKpi
+                        label="기준일 출석"
+                        value={g.presentTotal > 0 ? (g.presentGuest > 0 ? `${g.presentTotal}명 (+${g.presentGuest})` : `${g.presentTotal}명`) : "—"}
+                        color={g.color}
+                      />
                       <GradeKpi label="기준일 결석" value={g.absent > 0 ? `${g.absent}명` : "—"} />
                       <GradeKpi label="4주 평균" value={g.avg4w > 0 ? `${g.avg4w}명` : "—"} />
                       <GradeKpi label="연속 3주+" value={`${g.streak3}명`} />
@@ -420,15 +546,35 @@ export default function Stats() {
                         border: "1px solid oklch(0.85 0 0)",
                         fontSize: 12,
                       }}
-                      formatter={(v: number) => [`${v}명`, "출석 인원"]}
+                      formatter={(value: any, name: string) => {
+                        return [`${value}명`, name];
+                      }}
                     />
                     <Line
                       type="monotone"
+                      name="합계"
                       dataKey="count"
                       stroke={INK}
                       strokeWidth={2}
                       dot={{ r: 3, fill: INK }}
                       activeDot={{ r: 5, fill: WINE }}
+                    />
+                    <Line
+                      type="monotone"
+                      name="정규 학생"
+                      dataKey="regular"
+                      stroke="oklch(0.6 0.1 140)"
+                      strokeWidth={1.5}
+                      strokeDasharray="3 3"
+                      dot={{ r: 2 }}
+                    />
+                    <Line
+                      type="monotone"
+                      name="새친구"
+                      dataKey="guest"
+                      stroke="oklch(0.65 0.18 20)"
+                      strokeWidth={1.5}
+                      dot={{ r: 2 }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -449,9 +595,13 @@ export default function Stats() {
                         border: "1px solid oklch(0.85 0 0)",
                         fontSize: 12,
                       }}
-                      formatter={(v: number) => [`${v}건`, "누적 출석"]}
+                      formatter={(value: any, name: string) => {
+                        const displayName = name === "regular" ? "정규 학생" : name === "guest" ? "새친구" : name;
+                        return [`${value}건`, displayName];
+                      }}
                     />
-                    <Bar dataKey="count" fill={INK} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="regular" name="정규 학생" fill={INK} stackId="a" />
+                    <Bar dataKey="guest" name="새친구" fill="oklch(0.65 0.18 20)" stackId="a" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -470,17 +620,24 @@ export default function Stats() {
                     </tr>
                   </thead>
                   <tbody>
-                    {topStudents.map(({ student, count }, i) => (
-                      <tr key={student!.id} className="border-t border-foreground/10">
+                    {topStudents.map((person, i) => (
+                      <tr key={person.id} className="border-t border-foreground/10">
                         <td className="px-4 py-2.5 font-display italic text-muted-foreground tabular-nums">
                           {i + 1}
                         </td>
-                        <td className="px-4 py-2.5 font-medium">{student!.name}</td>
+                        <td className="px-4 py-2.5 font-medium">
+                          {person.name}
+                          {person.isGuest && (
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                              새친구
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                          {student!.grade} {student!.class_num}
+                          {person.grade} {person.classNum}
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-display italic">
-                          {count}
+                          {person.count}
                         </td>
                       </tr>
                     ))}
