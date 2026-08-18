@@ -21,21 +21,18 @@ jobs:
             exit 1
           fi
 
-          echo "Pinging Supabase REST endpoint: $SUPABASE_URL/rest/v1/"
+          echo "Executing database query on Supabase: $SUPABASE_URL/rest/v1/teachers"
           
-          # OpenAPI 스키마 엔드포인트 및 가벼운 DB 테이블 조회 요청
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$SUPABASE_URL/rest/v1/?apikey=$SUPABASE_ANON_KEY" \
+          # 실제 PostgreSQL 데이터베이스 쿼리(SELECT)를 실행하여 활동을 갱신합니다.
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$SUPABASE_URL/rest/v1/teachers?select=id&limit=1" \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY")
 
           echo "Response HTTP Status: $HTTP_STATUS"
 
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
-            echo "✅ Supabase project is active and successfully pinged!"
+            echo "✅ Supabase DB query executed successfully! Activity timer has been reset."
           else
-            echo "::warning::Supabase ping returned HTTP $HTTP_STATUS. Trying table query..."
-            curl -s -f -X GET "$SUPABASE_URL/rest/v1/teachers?select=count&limit=1" \
-              -H "apikey: $SUPABASE_ANON_KEY" \
-              -H "Authorization: Bearer $SUPABASE_ANON_KEY" > /dev/null
-            echo "✅ Supabase table query completed successfully!"
+            echo "::error::Supabase DB query failed with HTTP $HTTP_STATUS"
+            exit 1
           fi
